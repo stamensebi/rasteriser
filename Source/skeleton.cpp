@@ -21,9 +21,10 @@ using glm::mat4;
 /* ----------------------------------------------------------------------------*/
 /* FUNCTIONS                                                                   */
 
+void Interpolate (ivec2 a, ivec2 b, vector<ivec2>& result);
+void VertexShader (const vec4& v, ivec2& p);
 void Update();
 void Draw(screen* screen);
-void VertexShader (const vec4& v, ivec2& p);
 //void TransformationMatrix ();
 
 //Global variables
@@ -96,4 +97,16 @@ void VertexShader (const vec4& v, ivec2& p)
   float y = frac*v.y + SCREEN_HEIGHT/2.0;
   p.x = round(x);
   p.y = round(y);
+}
+
+void Interpolate (ivec2 a, ivec2 b, vector<ivec2>& result)
+{
+  int N = result.size();
+  vec2 step = vec2(b-a) / float(max(N-1,1));
+  vec2 current(a);
+  for (int i=0; i<N; i++)
+  {
+    result[i] = current;
+    current += step;
+  }
 }
