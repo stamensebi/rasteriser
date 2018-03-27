@@ -22,10 +22,12 @@ using glm::mat4;
 /* FUNCTIONS                                                                   */
 
 void Interpolate (ivec2 a, ivec2 b, vector<ivec2>& result);
-void VertexShader (const vec4& v, ivec2& p);
+void VertexShader (const glm::vec4& v, ivec2& p);
+void DrawLineSDL (SDL_Surface* surface, ivec2 a, ivec2 b, vec3 color);
 void Update();
 void Draw(screen* screen);
-//void TransformationMatrix ();
+void TransformationMatrix ( glm::mat4 tr_mat, glm::vec4 camera_position, glm::mat3 rotation_matrix);
+void DrawPolygonEdges ( screen* screen, const vector<glm::vec4>& vertices );
 
 //Global variables
 vec4 cam_pos(0.0, 0.0, -3.001, 1.0);
@@ -60,21 +62,47 @@ void Draw(screen* screen)
   for (uint32_t i=0; i<triangles.size(); i++)
   {
     std::vector<vec4> vertices(3);
+    std::vector<ivec2> projections(3);
 
     vertices[0] = triangles[i].v0;
     vertices[1] = triangles[i].v1;
     vertices[2] = triangles[i].v2;
 
-    for (int v=0; v<3; v++)
-    {
-      ivec2 projPos;
-      VertexShader( vertices[v], projPos);
-      vec3 colour(1.0,1.0,1.0);
-      PutPixelSDL( screen, projPos.x, projPos.y, colour );
-    }
+    //Calculate the projected positions of the triangle vertices
+    DrawPolygonEdges(screen, vertices);
 
   }
 
+}
+
+//Draw a line between two 4D points
+void DrawLineSDL (SDL_Surface* surface, ivec2 a, ivec2 b, vec3 color)
+{
+  ivec2 delta = glm::abs( a-b );
+  int pixels  = glm::max( delta.x, delta.y ) + 1;
+  vector<ivec2> line( pixels );
+  Interpolate( a, b, line );
+  for (int pixel = 0; pixel<pixels; pixel++)
+  {
+    PutPixelSDL( surface, line[pixel].x, line[pixel].y, color);
+  }
+}
+
+void DrawPolygonEdges ( screen* screen, const vector<glm::vec4>& vertices )
+{
+  int V = vertices.size();
+
+  vector<ivec2> projections( V );
+  for ( int i=0; i<V; i++ )
+    {
+      VertexShader( vertices[i], projections[i] );
+    }
+  for ( int a_idx=0; a_idx<V; a_idx++ )
+  {
+    int b_idx = (a_idx + 1)%V;
+    glm::vec3 color(1.0, 1.0, 1.0);
+    DrawLineSDL( screen, projections[a_idx], projections[b_idx], color );
+  }
 }
 
 /*Place updates of parameters here*/
@@ -92,9 +120,12 @@ void Update()
 
 void VertexShader (const vec4& v, ivec2& p)
 {
+  //Can create a camera movement matrix using TransformationMatrix(), then
+  //multiply by v to the right to transform the image position.
   float frac = focal_length/v.z;
   float x = frac*v.x + SCREEN_WIDTH/2.0;
   float y = frac*v.y + SCREEN_HEIGHT/2.0;
+
   p.x = round(x);
   p.y = round(y);
 }
@@ -109,4 +140,26 @@ void Interpolate (ivec2 a, ivec2 b, vector<ivec2>& result)
     result[i] = current;
     current += step;
   }
+}
+
+//Create a homogeneous-coordinates transformation matrix for translation and rotation
+void TransformationMatrix ( glm::mat4 transformation_mat, glm::vec4 camera_position, glm::mat3 rotation_matrix)
+{
+  //Create each row of the camera transform matrix. Only done outside for readability
+  glm::vec4 cam_x_col = glm::vec4( glm::vec3( 0.0 ), camera_position.x);
+  glm::vec4 cam_y_col = glm::vec4( glm::vec3( 0.0 ), camera_position.y);
+  glm::vec4 cam_z_col = glm::vec4( glm::vec3( 0.0 ), camera_position.z);
+  glm::vec4 cam_t_col = glm::vec4( glm::vec3( 0.0 ), 1.0);
+
+  //Expand the camera position vector into a 4x4 homogeneous transformation
+  glm::mat4 cam_transform   = glm::mat4( cam_x_col, cam_y_col, cam_z_col, cam_t_col);
+  glm::mat4 cam_transform_r = glm::mat4( -cam_x_col, -cam_y_col, -cam_z_col, cam_t_col);
+
+  //Expand the rotation matrix to a 4x4 homogeneous transformation
+  glm::mat4 homogeneous_rotate = glm::mat4(glm::vec4(rotation_matrix.x, 0.0),
+                                           glm::vec4(rotation_matrix.y, 0.0),
+                                           glm::vec4(rotation_matrix.z, 0.0),
+                                           glm::vec4(cam_t_col));
+
+  transformation_mat = cam_transform * homogeneous_rotate * cam_transform_r
 }
