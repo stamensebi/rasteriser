@@ -124,9 +124,15 @@ void VertexShader (const vec4& v, glm::ivec2& p)
   //Can create a camera movement matrix using TransformationMatrix(), then
   //multiply by v to the right to transform the image position.
   glm::vec4 cam_coord = v - cam_pos;
-  float frac = focal_length/cam_coord.z;
-  float x = frac*cam_coord.x + SCREEN_WIDTH/2.0;
-  float y = frac*cam_coord.y + SCREEN_HEIGHT/2.0;
+
+  glm::mat4 tr_mat  = glm::mat4();
+  glm::mat4 rot_mat = glm::mat4( 1.0 );
+  TransformationMatrix( tr_mat, cam_pos, rot_mat );
+  glm::vec4 test = tr_mat * v;
+
+  float frac = focal_length/test.z;
+  float x = frac*test.x + SCREEN_WIDTH/2.0;
+  float y = frac*test.y + SCREEN_HEIGHT/2.0;
 
   p.x = round(x);
   p.y = round(y);
