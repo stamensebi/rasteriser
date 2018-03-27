@@ -123,16 +123,13 @@ void VertexShader (const vec4& v, glm::ivec2& p)
 {
   //Can create a camera movement matrix using TransformationMatrix(), then
   //multiply by v to the right to transform the image position.
-  float x_temp = (focal_length*v.x)/v.z + SCREEN_WIDTH/2.0;
-  float y_temp = (focal_length*v.y)/v.z + SCREEN_WIDTH/2.0;
+  float cam_coord = v - cam_pos;
+  float frac = focal_length/cam_coord.z;
+  float x = frac*cam_coord.x + SCREEN_WIDTH/2.0;
+  float y = frac*cam_coord.y + SCREEN_HEIGHT/2.0;
 
-
-  float frac = focal_length/v.z;
-  float x = frac*v.x + SCREEN_WIDTH/2.0;
-  float y = frac*v.y + SCREEN_HEIGHT/2.0;
-
-  p.x = round(x_temp);
-  p.y = round(y_temp);
+  p.x = round(x);
+  p.y = round(y);
 }
 
 void Interpolate (glm::ivec2 a, glm::ivec2 b, vector<glm::ivec2>& result)
