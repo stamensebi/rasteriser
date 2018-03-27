@@ -77,7 +77,7 @@ void Draw(screen* screen)
 }
 
 //Draw a line between two 4D points
-void DrawLineSDL (screen* surface, glm::ivec2 a, glm::ivec2 b, vec3 color)
+void DrawLineSDL ( screen* surface, glm::ivec2 a, glm::ivec2 b, vec3 color )
 {
   glm::ivec2 delta = glm::abs( a-b );
   int pixels  = glm::max( delta.x, delta.y ) + 1;
@@ -123,12 +123,16 @@ void VertexShader (const vec4& v, glm::ivec2& p)
 {
   //Can create a camera movement matrix using TransformationMatrix(), then
   //multiply by v to the right to transform the image position.
+  float x_temp = (focal_length*v.x)/v.z + SCREEN_WIDTH/2.0;
+  float y_temp = (focal_length*v.y)/v.z + SCREEN_WIDTH/2.0;
+
+
   float frac = focal_length/v.z;
   float x = frac*v.x + SCREEN_WIDTH/2.0;
   float y = frac*v.y + SCREEN_HEIGHT/2.0;
 
-  p.x = round(x);
-  p.y = round(y);
+  p.x = round(x_temp);
+  p.y = round(y_temp);
 }
 
 void Interpolate (glm::ivec2 a, glm::ivec2 b, vector<glm::ivec2>& result)
@@ -147,19 +151,19 @@ void Interpolate (glm::ivec2 a, glm::ivec2 b, vector<glm::ivec2>& result)
 void TransformationMatrix ( glm::mat4 transformation_mat, glm::vec4 camera_position, glm::mat3 rotation_matrix)
 {
   //Create each row of the camera transform matrix. Only done outside for readability
-  glm::vec4 cam_x_col = glm::vec4( glm::vec3( 0.0 ), camera_position.x);
-  glm::vec4 cam_y_col = glm::vec4( glm::vec3( 0.0 ), camera_position.y);
-  glm::vec4 cam_z_col = glm::vec4( glm::vec3( 0.0 ), camera_position.z);
-  glm::vec4 cam_t_col = glm::vec4( glm::vec3( 0.0 ), 1.0);
+  glm::vec4 cam_x_col = glm::vec4( glm::vec3( 0.0 ), camera_position.x );
+  glm::vec4 cam_y_col = glm::vec4( glm::vec3( 0.0 ), camera_position.y );
+  glm::vec4 cam_z_col = glm::vec4( glm::vec3( 0.0 ), camera_position.z );
+  glm::vec4 cam_t_col = glm::vec4( glm::vec3( 0.0 ), 1.0 );
 
   //Expand the camera position vector into a 4x4 homogeneous transformation
-  glm::mat4 cam_transform   = glm::mat4( cam_x_col, cam_y_col, cam_z_col, cam_t_col);
-  glm::mat4 cam_transform_r = glm::mat4( -cam_x_col, -cam_y_col, -cam_z_col, cam_t_col);
+  glm::mat4 cam_transform   = glm::mat4( cam_x_col, cam_y_col, cam_z_col, cam_t_col );
+  glm::mat4 cam_transform_r = glm::mat4( -cam_x_col, -cam_y_col, -cam_z_col, cam_t_col );
 
 
   vec4 rotation_matrix_x = vec4(rotation_matrix[0][0], rotation_matrix[1][0], rotation_matrix[2][0], 0.0);
   vec4 rotation_matrix_y = vec4(rotation_matrix[0][1], rotation_matrix[1][1], rotation_matrix[1][2], 0.0);
-  vec4 rotation_matrix_z = vec4(rotation_matrix[0][2], rotation_matrix[1][2], rotation_matrix[2][2], 0.0);  
+  vec4 rotation_matrix_z = vec4(rotation_matrix[0][2], rotation_matrix[1][2], rotation_matrix[2][2], 0.0);
   //Expand the rotation matrix to a 4x4 homogeneous transformation
   glm::mat4 homogeneous_rotate = glm::mat4(rotation_matrix_x,
                                            rotation_matrix_y,
