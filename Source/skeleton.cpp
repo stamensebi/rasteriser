@@ -151,7 +151,7 @@ void Interpolate (glm::ivec2 a, glm::ivec2 b, vector<glm::ivec2>& result)
 }
 
 //Create a homogeneous-coordinates transformation matrix for translation and rotation
-void TransformationMatrix ( glm::mat4 transformation_mat, glm::vec4 camera_position, glm::mat3 rotation_matrix)
+void TransformationMatrix ( glm::mat4& transformation_mat, glm::vec4 camera_position, glm::mat3 rotation_matrix)
 {
   //Create each row of the camera transform matrix. Only done outside for readability
   glm::vec4 cam_x_col = glm::vec4( glm::vec3( 0.0 ), camera_position.x );
@@ -165,13 +165,13 @@ void TransformationMatrix ( glm::mat4 transformation_mat, glm::vec4 camera_posit
 
 
   vec4 rotation_matrix_x = vec4(rotation_matrix[0][0], rotation_matrix[1][0], rotation_matrix[2][0], 0.0);
-  vec4 rotation_matrix_y = vec4(rotation_matrix[0][1], rotation_matrix[1][1], rotation_matrix[1][2], 0.0);
+  vec4 rotation_matrix_y = vec4(rotation_matrix[0][1], rotation_matrix[1][1], rotation_matrix[2][1], 0.0);
   vec4 rotation_matrix_z = vec4(rotation_matrix[0][2], rotation_matrix[1][2], rotation_matrix[2][2], 0.0);
   //Expand the rotation matrix to a 4x4 homogeneous transformation
   glm::mat4 homogeneous_rotate = glm::mat4(rotation_matrix_x,
                                            rotation_matrix_y,
                                            rotation_matrix_z,
-                                           glm::vec4(cam_t_col));
+                                           cam_t_col);
 
-  transformation_mat = cam_transform * homogeneous_rotate * cam_transform_r;
+  transformation_mat = cam_transform * cam_transform_r;
 }
