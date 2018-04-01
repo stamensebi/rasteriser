@@ -21,9 +21,9 @@ using glm::vec2;
 
 /* ----------------------------------------------------------------------------*/
 /* FUNCTIONS                                                                   */
-
 void update_rotation (float yaw);
 void Interpolate (glm::ivec2 a, glm::ivec2 b, vector<glm::ivec2>& result);
+void ComputePolygonRows(const vector<glm::ivec2>& vertexPixels, vector<glm::ivec2>& leftPixels, vector<glm::ivec2>& rightPixels );
 void VertexShader (const glm::vec4& v, glm::ivec2& p);
 void DrawLineSDL (SDL_Surface* surface, glm::ivec2 a, glm::ivec2 b, vec3 color);
 void Update();
@@ -79,19 +79,7 @@ void Draw(screen* screen)
 
 }
 
-//Draw a line between two 4D points
-void DrawLineSDL ( screen* surface, glm::ivec2 a, glm::ivec2 b, vec3 color )
-{
-  glm::ivec2 delta = glm::abs( a-b );
-  int pixels  = glm::max( delta.x, delta.y ) + 1;
-  vector<glm::ivec2> line( pixels );
-  Interpolate( a, b, line );
-  for (int pixel = 0; pixel<pixels; pixel++)
-  {
-    PutPixelSDL( surface, line[pixel].x, line[pixel].y, color);
-  }
-}
-
+//Draw the edges of each polygon in the 4D world
 void DrawPolygonEdges ( screen* screen, const vector<glm::vec4>& vertices )
 {
   int V = vertices.size();
@@ -109,7 +97,53 @@ void DrawPolygonEdges ( screen* screen, const vector<glm::vec4>& vertices )
   }
 }
 
-/*Place updates of parameters here*/
+//Project 4D points onto the 2D camera image plane
+void VertexShader (const vec4& v, glm::ivec2& p)
+{
+  glm::vec4 cam_coord = v - cam_pos;
+  cam_coord = R_y * cam_coord;
+
+  //Testing only.
+  /**  glm::mat4 tr_mat  = glm::mat4();
+  glm::mat4 rot_mat = glm::mat4( 1.0 );
+  TransformationMatrix( tr_mat, cam_pos, rot_mat );
+  glm::vec4 test = tr_mat * v;**/
+
+  float frac = focal_length/cam_coord.z;
+  float x = frac*cam_coord.x + SCREEN_WIDTH/2.0;
+  float y = frac*cam_coord.y + SCREEN_HEIGHT/2.0;
+
+  p.x = round(x);
+  p.y = round(y);
+}
+
+//Draw a line between two 4D points
+void DrawLineSDL ( screen* surface, glm::ivec2 a, glm::ivec2 b, vec3 color )
+{
+  glm::ivec2 delta = glm::abs( a-b );
+  int pixels  = glm::max( delta.x, delta.y ) + 1;
+  vector<glm::ivec2> line( pixels );
+  Interpolate( a, b, line );
+  for (int pixel = 0; pixel<pixels; pixel++)
+  {
+    PutPixelSDL( surface, line[pixel].x, line[pixel].y, color);
+  }
+}
+
+//Generate equally-distributed values between two points a and b
+void Interpolate (glm::ivec2 a, glm::ivec2 b, vector<glm::ivec2>& result)
+{
+  int N = result.size();
+  glm::vec2 step = vec2(b-a) / float(max(N-1,1));
+  glm::vec2 current(a);
+  for (int i=0; i<N; i++)
+  {
+    result[i] = current;
+    current += step;
+  }
+}
+
+//Update parameters and calculate rendering time after each frame.
 void Update()
 {
   static int t = SDL_GetTicks();
@@ -152,45 +186,11 @@ void Update()
     update_rotation (rotation_angle);
   }
 
-
-  /*Good idea to remove this*/
   //std::cout << "Render time: " << dt << " ms." << std::endl;
-  /* Update variables*/
 }
 
-void VertexShader (const vec4& v, glm::ivec2& p)
-{
-  //Can create a camera movement matrix using TransformationMatrix(), then
-  //multiply by v to the right to transform the image position.
-  glm::vec4 cam_coord = v - cam_pos;
-  cam_coord = R_y * cam_coord;
-
-  //Testing only.
-  glm::mat4 tr_mat  = glm::mat4();
-  glm::mat4 rot_mat = glm::mat4( 1.0 );
-  TransformationMatrix( tr_mat, cam_pos, rot_mat );
-  glm::vec4 test = tr_mat * v;
-
-  float frac = focal_length/cam_coord.z;
-  float x = frac*cam_coord.x + SCREEN_WIDTH/2.0;
-  float y = frac*cam_coord.y + SCREEN_HEIGHT/2.0;
-
-  p.x = round(x);
-  p.y = round(y);
-}
-
-void Interpolate (glm::ivec2 a, glm::ivec2 b, vector<glm::ivec2>& result)
-{
-  int N = result.size();
-  glm::vec2 step = vec2(b-a) / float(max(N-1,1));
-  glm::vec2 current(a);
-  for (int i=0; i<N; i++)
-  {
-    result[i] = current;
-    current += step;
-  }
-}
-
+//Rotate the camera view around the Y axis.
+//TODO: Implement rotation around the X axis
 void update_rotation (float yaw)
 {
   R_y =  glm::mat4 (cos(yaw), 0, sin(yaw), 0,
@@ -200,6 +200,7 @@ void update_rotation (float yaw)
 }
 
 //Create a homogeneous-coordinates transformation matrix for translation and rotation
+//TODO: Refactoring this and actually use it
 void TransformationMatrix ( glm::mat4& transformation_mat, glm::vec4 camera_position, glm::mat3 rotation_matrix)
 {
   //Create each row of the camera transform matrix. Only done outside for readability
@@ -209,7 +210,7 @@ void TransformationMatrix ( glm::mat4& transformation_mat, glm::vec4 camera_posi
   glm::vec4 cam_t_col = glm::vec4( glm::vec3( 0.0 ), 1.0 );
 
   //Expand the camera position vector into a 4x4 homogeneous transformation
-  glm::mat4 cam_transform   = glm::mat4( cam_x_col, cam_y_col, cam_z_col, cam_t_col );
+  glm::mat4 cam_transform   = glm::mat4(  cam_x_col,  cam_y_col,  cam_z_col, cam_t_col );
   glm::mat4 cam_transform_r = glm::mat4( -cam_x_col, -cam_y_col, -cam_z_col, cam_t_col );
 
 
