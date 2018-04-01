@@ -28,7 +28,7 @@ void VertexShader (const glm::vec4& v, glm::ivec2& p);
 void DrawLineSDL (SDL_Surface* surface, glm::ivec2 a, glm::ivec2 b, vec3 color);
 void Update();
 void Draw(screen* screen);
-void TransformationMatrix ( glm::mat4 tr_mat, glm::vec4 camera_position, glm::mat3 rotation_matrix);
+void TransformationMatrix ( glm::mat4 tr_mat, glm::vec4 camera_position, glm::mat4 rotation_matrix);
 void DrawPolygonEdges ( screen* screen, const vector<glm::vec4>& vertices );
 
 //Global variables
@@ -118,34 +118,34 @@ void Update()
   float dt = float(t2-t);
   t = t2;
 
-  uint8_t* keystate = SDL_GetKeyState( 0 );
-  if( keystate[SDLK_UP] )
+  const uint8_t* keystate = SDL_GetKeyboardState( NULL );
+  if( keystate[SDL_SCANCODE_UP] )
   {
     // Move camera forward
     cam_pos.z += 0.1;
   }
-  if( keystate[SDLK_DOWN] )
+  if( keystate[SDL_SCANCODE_DOWN] )
   {
     // Move camera backward
     cam_pos.z -= 0.1;
   }
-  if( keystate[SDLK_LEFT] )
+  if( keystate[SDL_SCANCODE_LEFT] )
   {
     // Move camera to the left
     cam_pos.x -= 0.1;
   }
-  if( keystate[SDLK_RIGHT] )
+  if( keystate[SDL_SCANCODE_RIGHT] )
   {
     // Move camera to the right
     cam_pos.x += 0.1;
   }
-  if( keystate[SDLK_a] )
+  if( keystate[SDL_SCANCODE_A] )
   {
     // Move camera to the right
     rotation_angle -= 0.3;
     update_rotation (rotation_angle);
   }
-  if( keystate[SDLK_d] )
+  if( keystate[SDL_SCANCODE_D] )
   {
     // Move camera to the right
     rotation_angle += 0.3;
@@ -200,7 +200,7 @@ void update_rotation (float yaw)
 }
 
 //Create a homogeneous-coordinates transformation matrix for translation and rotation
-void TransformationMatrix ( glm::mat4& transformation_mat, glm::vec4 camera_position, glm::mat3 rotation_matrix)
+void TransformationMatrix ( glm::mat4 transformation_mat, glm::vec4 camera_position, glm::mat4 rotation_matrix)
 {
   //Create each row of the camera transform matrix. Only done outside for readability
   glm::vec4 cam_x_col = glm::vec4( glm::vec3( 0.0 ), camera_position.x );
