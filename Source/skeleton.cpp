@@ -22,6 +22,7 @@ using glm::vec2;
 /* ----------------------------------------------------------------------------*/
 /* FUNCTIONS                                                                   */
 
+void update_rotation (float yaw);
 void Interpolate (glm::ivec2 a, glm::ivec2 b, vector<glm::ivec2>& result);
 void VertexShader (const glm::vec4& v, glm::ivec2& p);
 void DrawLineSDL (SDL_Surface* surface, glm::ivec2 a, glm::ivec2 b, vec3 color);
@@ -33,7 +34,9 @@ void DrawPolygonEdges ( screen* screen, const vector<glm::vec4>& vertices );
 //Global variables
 vec4 cam_pos(0.0, 0.0, -3.001, 1.0);
 float focal_length = SCREEN_HEIGHT/2.0;
+float rotation_angle = 0.0;
 std::vector<Triangle> triangles;
+glm::mat4 R_y = glm::mat4(1.0);
 
 int main( int argc, char* argv[] )
 {
@@ -114,8 +117,44 @@ void Update()
   int t2 = SDL_GetTicks();
   float dt = float(t2-t);
   t = t2;
+
+  uint8_t* keystate = SDL_GetKeyState( 0 );
+  if( keystate[SDLK_UP] )
+  {
+    // Move camera forward
+    cam_pos.z += 0.1;
+  }
+  if( keystate[SDLK_DOWN] )
+  {
+    // Move camera backward
+    cam_pos.z -= 0.1;
+  }
+  if( keystate[SDLK_LEFT] )
+  {
+    // Move camera to the left
+    cam_pos.x -= 0.1;
+  }
+  if( keystate[SDLK_RIGHT] )
+  {
+    // Move camera to the right
+    cam_pos.x += 0.1;
+  }
+  if( keystate[SDLK_a] )
+  {
+    // Move camera to the right
+    rotation_angle -= 0.3;
+    update_rotation (rotation_angle);
+  }
+  if( keystate[SDLK_d] )
+  {
+    // Move camera to the right
+    rotation_angle += 0.3;
+    update_rotation (rotation_angle);
+  }
+
+
   /*Good idea to remove this*/
-  std::cout << "Render time: " << dt << " ms." << std::endl;
+  //std::cout << "Render time: " << dt << " ms." << std::endl;
   /* Update variables*/
 }
 
@@ -124,15 +163,17 @@ void VertexShader (const vec4& v, glm::ivec2& p)
   //Can create a camera movement matrix using TransformationMatrix(), then
   //multiply by v to the right to transform the image position.
   glm::vec4 cam_coord = v - cam_pos;
+  cam_coord = R_y * cam_coord;
 
+  //Testing only.
   glm::mat4 tr_mat  = glm::mat4();
   glm::mat4 rot_mat = glm::mat4( 1.0 );
   TransformationMatrix( tr_mat, cam_pos, rot_mat );
   glm::vec4 test = tr_mat * v;
 
-  float frac = focal_length/test.z;
-  float x = frac*test.x + SCREEN_WIDTH/2.0;
-  float y = frac*test.y + SCREEN_HEIGHT/2.0;
+  float frac = focal_length/cam_coord.z;
+  float x = frac*cam_coord.x + SCREEN_WIDTH/2.0;
+  float y = frac*cam_coord.y + SCREEN_HEIGHT/2.0;
 
   p.x = round(x);
   p.y = round(y);
@@ -148,6 +189,14 @@ void Interpolate (glm::ivec2 a, glm::ivec2 b, vector<glm::ivec2>& result)
     result[i] = current;
     current += step;
   }
+}
+
+void update_rotation (float yaw)
+{
+  R_y =  glm::mat4 (cos(yaw), 0, sin(yaw), 0,
+                       0,     1,     0,    0,
+                   -sin(yaw), 0, cos(yaw), 0,
+                       0,     0,     0,    1);
 }
 
 //Create a homogeneous-coordinates transformation matrix for translation and rotation
@@ -173,5 +222,5 @@ void TransformationMatrix ( glm::mat4& transformation_mat, glm::vec4 camera_posi
                                            rotation_matrix_z,
                                            cam_t_col);
 
-  transformation_mat = cam_transform * cam_transform_r;
+  transformation_mat = cam_transform * homogeneous_rotate * cam_transform_r;
 }
