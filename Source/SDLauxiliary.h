@@ -50,7 +50,7 @@ void SDL_SaveImage(screen *s, const char* filename)
 		<< SDL_GetError() << std::endl;
       exit(1);
     }
-  
+
 }
 
 void KillSDL(screen* s)
@@ -78,13 +78,13 @@ screen* InitializeSDL(int width,int height, bool fullscreen)
 		<< SDL_GetError() << std::endl;
       exit(1);
     }
-  
+
   screen *s = new screen;
   s->width = width;
   s->height = height;
   s->buffer = new uint32_t[width*height];
   memset(s->buffer, 0, width*height*sizeof(uint32_t));
-  
+
   uint32_t flags = SDL_WINDOW_OPENGL;
   if(fullscreen)
     {
@@ -122,7 +122,7 @@ screen* InitializeSDL(int width,int height, bool fullscreen)
 	     << SDL_GetError() << std::endl;
       exit(1);
     }
-  
+
   return s;
 }
 
@@ -150,7 +150,7 @@ void PutPixelSDL(screen* s, int x, int y, glm::vec3 colour)
 {
   if(x<0 || x>=s->width || y<0 || y>=s->height)
     {
-      std::cout << "apa" << std::endl;
+      //std::cout << "apa" << std::endl;
       return;
     }
   uint32_t r = uint32_t( glm::clamp( 255*colour.r, 0.f, 255.f ) );

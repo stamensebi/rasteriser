@@ -152,7 +152,7 @@ void Update()
   float dt = float(t2-t);
   t = t2;
 
-  const uint8_t* keystate = SDL_GetKeyboardState( 0 );
+  const uint8_t* keystate = SDL_GetKeyboardState( NULL );
   if( keystate[SDL_SCANCODE_UP] )
   {
     // Move camera forward
@@ -176,13 +176,13 @@ void Update()
   if( keystate[SDL_SCANCODE_A] )
   {
     // Move camera to the right
-    rotation_angle -= 0.3;
+    rotation_angle -= 0.05;
     update_rotation (rotation_angle);
   }
   if( keystate[SDL_SCANCODE_D] )
   {
     // Move camera to the right
-    rotation_angle += 0.3;
+    rotation_angle += 0.05;
     update_rotation (rotation_angle);
   }
 
@@ -200,7 +200,6 @@ void update_rotation (float yaw)
 }
 
 //Create a homogeneous-coordinates transformation matrix for translation and rotation
-//TODO: Refactoring this and actually use it
 void TransformationMatrix ( glm::mat4 transformation_mat, glm::vec4 camera_position, glm::mat4 rotation_matrix)
 {
   //Create each row of the camera transform matrix. Only done outside for readability
