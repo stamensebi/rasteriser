@@ -21,27 +21,34 @@ using glm::vec2;
 
 /* ----------------------------------------------------------------------------*/
 /* FUNCTIONS                                                                   */
-void update_rotation (float yaw);
+void ComputePolygonRows (const vector<glm::ivec2>& vertexPixels, vector<glm::ivec2>& leftPixels, vector<glm::ivec2>& rightPixels);
+void DrawRows (const vector<ivec2>& leftPixels, const vector<ivec2>& rightPixels, vec3 currentColor);
+void DrawPolygon( const vector<vec4>& vertices );
+void update_rotation_x (float pitch);
+void update_rotation_y (float yaw  );
 void Interpolate (glm::ivec2 a, glm::ivec2 b, vector<glm::ivec2>& result);
-void ComputePolygonRows(const vector<glm::ivec2>& vertexPixels, vector<glm::ivec2>& leftPixels, vector<glm::ivec2>& rightPixels );
+void ComputePolygonRows (const vector<glm::ivec2>& vertexPixels, vector<glm::ivec2>& leftPixels, vector<glm::ivec2>& rightPixels );
 void VertexShader (const glm::vec4& v, glm::ivec2& p);
 void DrawLineSDL (SDL_Surface* surface, glm::ivec2 a, glm::ivec2 b, vec3 color);
 void Update();
-void Draw(screen* screen);
-void TransformationMatrix ( glm::mat4 tr_mat, glm::vec4 camera_position, glm::mat4 rotation_matrix);
-void DrawPolygonEdges ( screen* screen, const vector<glm::vec4>& vertices );
+void Draw (screen* screen);
+void TransformationMatrix (glm::mat4 tr_mat, glm::vec4 camera_position, glm::mat4 rotation_matrix);
+void DrawPolygonEdges (screen* screen, const vector<glm::vec4>& vertices);
 
 //Global variables
 vec4 cam_pos(0.0, 0.0, -3.001, 1.0);
 float focal_length = SCREEN_HEIGHT/2.0;
-float rotation_angle = 0.0;
 std::vector<Triangle> triangles;
+float rotation_angle_y = 0.0;
+float rotation_angle_x = 0.0;
 glm::mat4 R_y = glm::mat4(1.0);
+glm::mat4 R_x = glm::mat4(1.0);
 
 int main( int argc, char* argv[] )
 {
 
   screen *screen = InitializeSDL( SCREEN_WIDTH, SCREEN_HEIGHT, FULLSCREEN_MODE );
+  TestPolygonRows();
 
   while( NoQuitMessageSDL() )
     {
@@ -73,7 +80,7 @@ void Draw(screen* screen)
     vertices[2] = triangles[i].v2;
 
     //Calculate the projected positions of the triangle vertices
-    DrawPolygonEdges(screen, vertices);
+    DrawPolygon( vertices, triangles[i].color );
 
   }
 
@@ -97,11 +104,101 @@ void DrawPolygonEdges ( screen* screen, const vector<glm::vec4>& vertices )
   }
 }
 
+//Draw a 3D polygon
+void DrawPolygon( const vector<vec4>& vertices, vec3 currentColor )
+{
+  int V = vertices.size();
+  vector<ivec2> vertexPixels( V );
+  for( int i=0; i<V; ++i )
+    VertexShader( vertices[i], vertexPixels[i] );
+  vector<ivec2> leftPixels;
+  vector<ivec2> rightPixels;
+  ComputePolygonRows( vertexPixels, leftPixels, rightPixels );
+  DrawRows( leftPixels, rightPixels, currentColor );
+}
+
+void ComputePolygonRows (const vector<glm::ivec2>& vertexPixels, vector<glm::ivec2>& leftPixels, vector<glm::ivec2>& rightPixels)
+{
+  int V = vertexPixels.size();
+  int min_y = numeric_limits<int>::max();
+  int max_y = -numeric_limits<int>::max();
+  int idx_min = 0;
+  int idx_max = 0;
+  for ( int i=0; i<V; i++ )
+  {
+    if (vertexPixels[i].y > max_y)
+      max_y = vertexPixels[i].y;
+    if (vertexPixels[i].y < min_y)
+      min_y = vertexPixels[i].y;
+  }
+  int ROWS = max_y - min_y + 1;
+
+  for (int i=0; i<ROWS< i++)
+  {
+    glm::ivec2 leftPixel  = glm::ivec2(numeric_limits<int>::max(), (min_y + i));
+    glm::ivec2 rightPixel = glm::ivec2(numeric_limits<int>::min(), (min_y + i));
+    leftPixels.push_back(leftPixel);
+    rightPixels.push_back(rightPixel);
+  }
+
+  for ( int i=0; i<V; i++ )
+  {
+    int j = (i + 1)%V;
+    glm::ivec2 delta = glm::abs( vertexPixels[i] - vertexPixels[j] );
+    int pixels  = glm::max( delta.x, delta.y ) + 1;
+    vector<glm::ivec2> edge( pixels );
+    Interpolate( vertexPixels[i], vertexPixels[j], edge );
+
+    for (int px = 0; px<pixels; px++)
+    {
+      int y_idx = edge[px].y - min_y;
+      if(edge[px].x < leftPixels[y_idx].x)
+        leftPixels[y_idx].x = edge[px].x;
+      if(edge[px].x > rightPixels[y_idx].x)
+        rightPixels[y_idx].x = edge[px].x;
+    }
+  }
+}
+
+void TestPolygonRows ()
+{
+  vector<ivec2> vertexPixels(3);
+  vertexPixels[0] = ivec2(10, 5);
+  vertexPixels[1] = ivec2( 5,10);
+  vertexPixels[2] = ivec2(15,15);
+  vector<ivec2> leftPixels;
+  vector<ivec2> rightPixels;
+  ComputePolygonRows( vertexPixels, leftPixels, rightPixels );
+  for( int row=0; row<leftPixels.size(); ++row )
+  {
+  cout << "Start: ("
+       << leftPixels[row].x << ","
+       << leftPixels[row].y << "). "
+       << "End: ("
+       << rightPixels[row].x << ","
+       << rightPixels[row].y << "). " << endl;
+  }
+}
+
+void DrawRows (const vector<ivec2>& leftPixels, const vector<ivec2>& rightPixels, vec3 currentColor)
+{
+  for (int i = 0; i<leftPixels.size(); i++)
+  {
+    int pixels = rightPixels[i].x - leftPixels[i].x + 1;
+    vector<glm::ivec2> line( pixels );
+    Interpolate( leftPixels[i], rightPixels[i], line );
+    for (int pixel = 0; pixel<pixels; pixel++)
+    {
+      PutPixelSDL( surface, line[pixel].x, line[pixel].y, currentColor);
+    }
+  }
+}
+
 //Project 4D points onto the 2D camera image plane
 void VertexShader (const vec4& v, glm::ivec2& p)
 {
   glm::vec4 cam_coord = v - cam_pos;
-  cam_coord = R_y * cam_coord;
+  cam_coord = R_y * R_x * cam_coord;
 
   //Testing only.
   /**  glm::mat4 tr_mat  = glm::mat4();
@@ -175,28 +272,48 @@ void Update()
   }
   if( keystate[SDL_SCANCODE_A] )
   {
-    // Move camera to the right
-    rotation_angle -= 0.05;
-    update_rotation (rotation_angle);
+    // Rotate camera to the left
+    rotation_angle_y -= 0.05;
+    update_rotation_y (rotation_angle_y);
   }
   if( keystate[SDL_SCANCODE_D] )
   {
-    // Move camera to the right
-    rotation_angle += 0.05;
-    update_rotation (rotation_angle);
+    // Rotate camera to the right
+    rotation_angle_y += 0.05;
+    update_rotation_y (rotation_angle_y);
+  }
+  if( keystate[SDL_SCANCODE_W] )
+  {
+    // Rotate camera uowards
+    rotation_angle_x += 0.05;
+    update_rotation_x (rotation_angle_x);
+  }
+  if( keystate[SDL_SCANCODE_D] )
+  {
+    // Rotate camera downwards
+    rotation_angle_x += 0.05;
+    update_rotation_y (rotation_angle_x);
   }
 
   //std::cout << "Render time: " << dt << " ms." << std::endl;
 }
 
 //Rotate the camera view around the Y axis.
-//TODO: Implement rotation around the X axis
-void update_rotation (float yaw)
+void update_rotation_y (float yaw)
 {
   R_y =  glm::mat4 (cos(yaw), 0, sin(yaw), 0,
                        0,     1,     0,    0,
                    -sin(yaw), 0, cos(yaw), 0,
                        0,     0,     0,    1);
+}
+
+//Rotate the camera view around the X axis.
+void update_rotation_x (float pitch)
+{
+  R_y =  glm::mat4 (1,     0,          0,       0,
+                    0, cos(pitch), -sin(pitch), 0,
+                    0, sin(pitch),  cos(pitch), 0,
+                    0,     0,          0,       1);
 }
 
 //Create a homogeneous-coordinates transformation matrix for translation and rotation
