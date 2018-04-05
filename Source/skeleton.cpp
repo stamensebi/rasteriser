@@ -23,7 +23,7 @@ using glm::vec2;
 /* FUNCTIONS                                                                   */
 void ComputePolygonRows (const vector<glm::ivec2>& vertexPixels, vector<glm::ivec2>& leftPixels, vector<glm::ivec2>& rightPixels);
 void DrawRows (const vector<ivec2>& leftPixels, const vector<ivec2>& rightPixels, vec3 currentColor);
-void DrawPolygon( const vector<vec4>& vertices );
+void DrawPolygon( const vector<vec4>& vertices, vec3 currentColor);
 void update_rotation_x (float pitch);
 void update_rotation_y (float yaw  );
 void Interpolate (glm::ivec2 a, glm::ivec2 b, vector<glm::ivec2>& result);
