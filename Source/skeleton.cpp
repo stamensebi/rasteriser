@@ -84,7 +84,6 @@ void Draw(screen* screen)
   for (int i=0; i<triangles.size(); i++)
   {
     std::vector<vec4> vertices(3);
-    std::vector<glm::ivec2> projections(3);
 
     vertices[0] = triangles[i].v0;
     vertices[1] = triangles[i].v1;
@@ -101,11 +100,11 @@ void Draw(screen* screen)
 void DrawPolygon( const vector<vec4>& vertices, vec3 currentColor, screen* screen )
 {
   int V = vertices.size();
-  vector<ivec2> vertexPixels( V );
+  vector<Pixel> vertexPixels( V );
   for( int i=0; i<V; ++i )
     VertexShader( vertices[i], vertexPixels[i] );
-  vector<ivec2> leftPixels;
-  vector<ivec2> rightPixels;
+  vector<Pixel> leftPixels;
+  vector<Pixel> rightPixels;
   ComputePolygonRows( vertexPixels, leftPixels, rightPixels );
   DrawRows( leftPixels, rightPixels, currentColor, screen );
 }
