@@ -20,6 +20,14 @@ using glm::ivec2;
 #define SCREEN_HEIGHT 256
 #define FULLSCREEN_MODE false
 
+//Used to describe a pixel from the image
+struct Pixel
+{
+  int x;
+  int y;
+  float zinv;
+};
+
 /* ----------------------------------------------------------------------------*/
 /* FUNCTIONS                                                                   */
 void ComputePolygonRows (const vector<Pixel>& vertexPixels, vector<Pixel>& leftPixels, vector<Pixel>& rightPixels);
@@ -43,14 +51,6 @@ float rotation_angle_x = 0.0;
 glm::mat4 R_y = glm::mat4(1.0);
 glm::mat4 R_x = glm::mat4(1.0);
 float depthBuffer[SCREEN_HEIGHT][SCREEN_WIDTH];
-
-//Used to describe a pixel from the image
-struct Pixel
-{
-  int x;
-  int y;
-  float zinv;
-};
 
 int main( int argc, char* argv[] )
 {
@@ -81,7 +81,7 @@ void Draw(screen* screen)
 
   LoadTestModel(triangles);
   //printf("#%d triangles\n", triangles.size());
-  for (int i=0; i<triangles.size(); i++)
+  for (uint32_t i=0; i<triangles.size(); i++)
   {
     std::vector<vec4> vertices(3);
 
@@ -126,8 +126,8 @@ void ComputePolygonRows ( const vector<Pixel>& vertexPixels, vector<Pixel>& left
 
   for (int i=0; i<ROWS; i++)
   {
-    Pixel *leftPixel  = new Pixel();
-    Pixel *rightPixel = new Pixel();
+    Pixel leftPixel;//  = new Pixel();
+    Pixel rightPixel;// = new Pixel();
     leftPixel.x = numeric_limits<int>::max();
     leftPixel.y = min_y + i;
     rightPixel.x = numeric_limits<int>::min();
@@ -164,17 +164,19 @@ void ComputePolygonRows ( const vector<Pixel>& vertexPixels, vector<Pixel>& left
 
 void DrawRows (const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels, vec3 currentColor, screen* screen)
 {
-  for (int i = 0; i<leftPixels.size(); i++)
+  for (uint32_t i = 0; i<leftPixels.size(); i++)
   {
     int pixels = rightPixels[i].x - leftPixels[i].x + 1;
     vector<Pixel> line( pixels );
+    printf("%s\n", "boom1");
     InterpolatePixels( leftPixels[i], rightPixels[i], line );
+    printf("%d\n", line[pixels-1].x);
     for (int pixel = 0; pixel<pixels; pixel++)
     {
-      if(line[pixel].zinv > depthBuffer[line[pixel].x][line[pixel].y])
+      if(line[pixel].zinv > depthBuffer[line[pixel].y][line[pixel].x])
         {
           PutPixelSDL( screen, line[pixel].x, line[pixel].y, currentColor);
-          depthBuffer[line[pixel].x][line[pixel].y] = line[pixel].zinv;
+          depthBuffer[line[pixel].y][line[pixel].x] = line[pixel].zinv;
         }
     }
   }
