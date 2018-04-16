@@ -19,7 +19,7 @@ using glm::ivec2;
 #define SCREEN_WIDTH 320
 #define SCREEN_HEIGHT 256
 #define FULLSCREEN_MODE false
-
+#define pi 3.1415
 //Used to describe a pixel from the image
 struct Pixel
 {
@@ -33,7 +33,7 @@ struct Vertex
 {
   vec4 position;
   vec4 normal;
-  vec2 reflectance;
+  vec3 reflectance;
 };
 
 /* ----------------------------------------------------------------------------*/
@@ -45,8 +45,8 @@ void update_rotation_x (float pitch);
 void update_rotation_y (float yaw  );
 void InterpolatePixels (Pixel a, Pixel b, vector<Pixel>& result);
 void Interpolate (glm::ivec2 a, glm::ivec2 b, vector<glm::ivec2>& result);
-void VertexShader (const glm::Vertex& v, Pixel& p);
-void PixelShader( const Pixel& p, screen* screen)
+void VertexShader (const Vertex& v, Pixel& p);
+void PixelShader( const Pixel& p, screen* screen);
 void Update();
 void Draw (screen* screen);
 void TransformationMatrix (glm::mat4 tr_mat, glm::vec4 camera_position, glm::mat4 rotation_matrix);
@@ -87,9 +87,9 @@ void Draw(screen* screen)
 {
   /* Clear buffers */
   memset(screen->buffer, 0, screen->height*screen->width*sizeof(uint32_t));
-  for( int y=0; y<SCREEN_HEIGHT; ++y )
-    for( int x=0; x<SCREEN_WIDTH; ++x )
-      depthBuffer[y][x] = 0;
+  memset(depthBuffer, 0, SCREEN_HEIGHT*SCREEN_WIDTH*sizeof(float));
+  // for( int y=0; y<SCREEN_HEIGHT; ++y )
+  //   for( int x=0; x<SCREEN_WIDTH; ++x )
 
   LoadTestModel(triangles);
   for (uint32_t i=0; i<triangles.size(); i++)
@@ -173,7 +173,7 @@ void ComputePolygonRows ( const vector<Pixel>& vertexPixels, vector<Pixel>& left
     //leftPixels.push_back(leftPixel);
     //rightPixels.push_back(rightPixel);
   }
-
+  cout<<leftPixels[35].x<<endl;
   // Loop through all edges of the polygon and use
   // linear interpolation to find the x-coordinate for
   // each row it occupies. Update the corresponding
@@ -185,6 +185,7 @@ void ComputePolygonRows ( const vector<Pixel>& vertexPixels, vector<Pixel>& left
     int delta_y = glm::abs(vertexPixels[i].y - vertexPixels[j].y);
     int pixels  = glm::max( delta_x, delta_y ) + 1;
     vector<Pixel> edge( pixels );
+
     InterpolatePixels( vertexPixels[i], vertexPixels[j], edge );
 
     for (int px = 0; px<pixels; px++)
@@ -202,6 +203,7 @@ void ComputePolygonRows ( const vector<Pixel>& vertexPixels, vector<Pixel>& left
       }
     }
   }
+
 }
 
 void DrawRows (const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels, vec3 currentColor, screen* screen)
@@ -211,10 +213,10 @@ void DrawRows (const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels
     int pixels = rightPixels[i].x - leftPixels[i].x + 1;
     vector<Pixel> line( pixels );
     InterpolatePixels( leftPixels[i], rightPixels[i], line );
-    printf("%d\n", line[pixels-1].x);
     for (int pixel = 0; pixel<pixels; pixel++)
     {
-      PixelShader( line[pixel], screen );
+      //PutPixelSDL( screen, line[pixel].x, line[pixel].y, vec3(0,0,0));
+      //PixelShader( line[pixel], screen );
       /*if(line[pixel].zinv > depthBuffer[line[pixel].y][line[pixel].x])
         {
           depthBuffer[line[pixel].y][line[pixel].x] = line[pixel].zinv;
@@ -230,7 +232,7 @@ void VertexShader (const Vertex& v, Pixel& p)
   glm::vec4 cam_coord = v.position - cam_pos;
   cam_coord = R_y * R_x * cam_coord;
 
-  p.zinv = 1/cam_coord.z;
+  p.zinv = 1.0/cam_coord.z;
   p.x = round(focal_length*p.zinv*cam_coord.x + SCREEN_WIDTH/2.0);
   p.y = round(focal_length*p.zinv*cam_coord.y + SCREEN_HEIGHT/2.0);
 
@@ -238,8 +240,9 @@ void VertexShader (const Vertex& v, Pixel& p)
   vec4 r = normalize(light_pos - v.position);
   float radius = length(r);
   vec4 n = normalize(v.normal);
-  float dot = max( dot(r, n), 0.f );
-  float frac = dot / (4 * glm::pi<float>() * radius * radius );
+  float res = dot(r, n);
+  float dot = max( res, 0.f );
+  float frac = dot / (4 * pi * radius * radius );
   vec3 D = frac*lightPower + indirectLightPowerPerArea;
   p.illumination = v.reflectance * D;
 
@@ -250,11 +253,12 @@ void PixelShader( const Pixel& p, screen* screen)
 {
   int x = p.x;
   int y = p.y;
-  if (p.zinv > depthBuffer[y][x])
-  {
-    depthBuffer[y][x] = p.zinv;
-    PutPixelSDL( screen, x, y, p.illumination)
-  }
+  cout << x << " " << y << endl;
+  // if (p.zinv > depthBuffer[y][x])
+  // {
+  //   depthBuffer[y][x] = p.zinv;
+  //   PutPixelSDL( screen, x, y, p.illumination);
+  // }
 }
 
 //Generate equally-distributed values between two Pixels a and b
