@@ -8,11 +8,11 @@
 #include <math.h>
 
 using namespace std;
-using glm::vec3;
-using glm::mat3;
-using glm::vec4;
-using glm::mat4;
 using glm::vec2;
+using glm::vec3;
+using glm::vec4;
+using glm::mat3;
+using glm::mat4;
 using glm::ivec2;
 
 
@@ -26,24 +26,36 @@ struct Pixel
   int x;
   int y;
   float zinv;
+  vec3 illumination;
+};
+
+struct Vertex
+{
+  vec4 position;
+  vec4 normal;
+  vec2 reflectance;
 };
 
 /* ----------------------------------------------------------------------------*/
 /* FUNCTIONS                                                                   */
 void ComputePolygonRows (const vector<Pixel>& vertexPixels, vector<Pixel>& leftPixels, vector<Pixel>& rightPixels);
 void DrawRows (const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels, vec3 currentColor, screen* screen);
-void DrawPolygon( const vector<vec4>& vertices, vec3 currentColor, screen* screen);
+void DrawPolygon( const vector<Vertex>& vertices, vec3 currentColor, screen* screen);
 void update_rotation_x (float pitch);
 void update_rotation_y (float yaw  );
 void InterpolatePixels (Pixel a, Pixel b, vector<Pixel>& result);
 void Interpolate (glm::ivec2 a, glm::ivec2 b, vector<glm::ivec2>& result);
-void VertexShader (const glm::vec4& v, Pixel& p);
+void VertexShader (const glm::Vertex& v, Pixel& p);
+void PixelShader( const Pixel& p, screen* screen)
 void Update();
 void Draw (screen* screen);
 void TransformationMatrix (glm::mat4 tr_mat, glm::vec4 camera_position, glm::mat4 rotation_matrix);
 
 //Global variables
 vec4 cam_pos(0.0, 0.0, -3.001, 1.0);
+vec4 light_pos(0, -0.5, -0.7, 1.0);
+vec3 lightPower = 1.1f*vec3( 1, 1, 1 );
+vec3 indirectLightPowerPerArea = 0.5f*vec3( 1, 1, 1 );
 float focal_length = SCREEN_HEIGHT/2.0;
 std::vector<Triangle> triangles;
 float rotation_angle_y = 0.0;
@@ -80,14 +92,20 @@ void Draw(screen* screen)
       depthBuffer[y][x] = 0;
 
   LoadTestModel(triangles);
-  //printf("#%d triangles\n", triangles.size());
   for (uint32_t i=0; i<triangles.size(); i++)
   {
-    std::vector<vec4> vertices(3);
+    std::vector<Vertex> vertices(3);
 
-    vertices[0] = triangles[i].v0;
-    vertices[1] = triangles[i].v1;
-    vertices[2] = triangles[i].v2;
+    vertices[0].position = triangles[i].v0;
+    vertices[1].position = triangles[i].v1;
+    vertices[2].position = triangles[i].v2;
+    vertices[0].normal = triangles[i].normal;
+    vertices[1].normal = triangles[i].normal;
+    vertices[1].normal = triangles[i].normal;
+    vertices[0].reflectance = triangles[i].color;
+    vertices[1].reflectance = triangles[i].color;
+    vertices[2].reflectance = triangles[i].color;
+
 
     //Calculate the projected positions of the triangle vertices
     DrawPolygon( vertices, triangles[i].color, screen );
@@ -97,7 +115,7 @@ void Draw(screen* screen)
 }
 
 //Draw a 3D polygon
-void DrawPolygon( const vector<vec4>& vertices, vec3 currentColor, screen* screen )
+void DrawPolygon( const vector<Vertex>& vertices, vec3 currentColor, screen* screen )
 {
   int V = vertices.size();
   vector<Pixel> vertexPixels( V );
@@ -113,6 +131,9 @@ void DrawPolygon( const vector<vec4>& vertices, vec3 currentColor, screen* scree
 void ComputePolygonRows ( const vector<Pixel>& vertexPixels, vector<Pixel>& leftPixels, vector<Pixel>& rightPixels )
 {
   int V = vertexPixels.size();
+
+  // Find max and min y-value of the polygon
+  // and compute the number of rows it occupies.
   int min_y = numeric_limits<int>::max();
   int max_y = numeric_limits<int>::min();
   for ( int i=0; i<V; i++ )
@@ -124,18 +145,39 @@ void ComputePolygonRows ( const vector<Pixel>& vertexPixels, vector<Pixel>& left
   }
   int ROWS = max_y - min_y + 1;
 
+  //Resize vectors to ROWS
+  leftPixels.resize(ROWS);
+  rightPixels.resize(ROWS);
+
+  // Initialize the x-coordinates in leftPixels
+  // to some really large value and the x-coordinates
+  // in rightPixels to some really small value.
   for (int i=0; i<ROWS; i++)
   {
-    Pixel leftPixel;//  = new Pixel();
+    /*Pixel leftPixel;//  = new Pixel();
     Pixel rightPixel;// = new Pixel();
-    leftPixel.x = numeric_limits<int>::max();
+    leftPixels.x = numeric_limits<int>::max();
     leftPixel.y = min_y + i;
+    leftPixel.zinv = 0;
     rightPixel.x = numeric_limits<int>::min();
     rightPixel.y = min_y + i;
-    leftPixels.push_back(leftPixel);
-    rightPixels.push_back(rightPixel);
+    rightPixel.zinv = 0;*/
+    leftPixels[i].x = numeric_limits<int>::max();
+    leftPixels[i].y = min_y + i;
+    leftPixels[i].zinv = 0;
+    rightPixels[i].x = numeric_limits<int>::min();
+    rightPixels[i].y = min_y + i;
+    rightPixels[i].zinv = 0;
+
+
+    //leftPixels.push_back(leftPixel);
+    //rightPixels.push_back(rightPixel);
   }
 
+  // Loop through all edges of the polygon and use
+  // linear interpolation to find the x-coordinate for
+  // each row it occupies. Update the corresponding
+  // values in rightPixels and leftPixels.
   for ( int i=0; i<V; i++ )
   {
     int j = (i + 1)%V;
@@ -168,59 +210,75 @@ void DrawRows (const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels
   {
     int pixels = rightPixels[i].x - leftPixels[i].x + 1;
     vector<Pixel> line( pixels );
-    printf("%s\n", "boom1");
     InterpolatePixels( leftPixels[i], rightPixels[i], line );
     printf("%d\n", line[pixels-1].x);
     for (int pixel = 0; pixel<pixels; pixel++)
     {
-      if(line[pixel].zinv > depthBuffer[line[pixel].y][line[pixel].x])
+      PixelShader( line[pixel], screen );
+      /*if(line[pixel].zinv > depthBuffer[line[pixel].y][line[pixel].x])
         {
-          PutPixelSDL( screen, line[pixel].x, line[pixel].y, currentColor);
           depthBuffer[line[pixel].y][line[pixel].x] = line[pixel].zinv;
-        }
+          PutPixelSDL( screen, line[pixel].x, line[pixel].y, currentColor);
+        }*/
     }
   }
 }
 
 //Project 4D points onto the 2D camera image plane
-void VertexShader (const vec4& v, Pixel& p)
+void VertexShader (const Vertex& v, Pixel& p)
 {
-  glm::vec4 cam_coord = v - cam_pos;
+  glm::vec4 cam_coord = v.position - cam_pos;
   cam_coord = R_y * R_x * cam_coord;
 
-  //Testing only.
-  /**  glm::mat4 tr_mat  = glm::mat4();
-  glm::mat4 rot_mat = glm::mat4( 1.0 );
-  TransformationMatrix( tr_mat, cam_pos, rot_mat );
-  glm::vec4 test = tr_mat * v;**/
-
-  float frac = focal_length/cam_coord.z;
-  float x = frac*cam_coord.x + SCREEN_WIDTH/2.0;
-  float y = frac*cam_coord.y + SCREEN_HEIGHT/2.0;
-
   p.zinv = 1/cam_coord.z;
-  p.x = round(x);
-  p.y = round(y);
+  p.x = round(focal_length*p.zinv*cam_coord.x + SCREEN_WIDTH/2.0);
+  p.y = round(focal_length*p.zinv*cam_coord.y + SCREEN_HEIGHT/2.0);
+
+  //Illumination for each Vertex
+  vec4 r = normalize(light_pos - v.position);
+  float radius = length(r);
+  vec4 n = normalize(v.normal);
+  float dot = max( dot(r, n), 0.f );
+  float frac = dot / (4 * glm::pi<float>() * radius * radius );
+  vec3 D = frac*lightPower + indirectLightPowerPerArea;
+  p.illumination = v.reflectance * D;
+
+}
+
+
+void PixelShader( const Pixel& p, screen* screen)
+{
+  int x = p.x;
+  int y = p.y;
+  if (p.zinv > depthBuffer[y][x])
+  {
+    depthBuffer[y][x] = p.zinv;
+    PutPixelSDL( screen, x, y, p.illumination)
+  }
 }
 
 //Generate equally-distributed values between two Pixels a and b
 void InterpolatePixels (Pixel a, Pixel b, vector<Pixel>& result)
 {
   int N = result.size();
-  int step_x = (b.x - a.x) / float(max(N-1,1));
-  int step_y = (b.y - a.y) / float(max(N-1,1));
-  int step_z = (b.zinv - a.zinv) / float(max(N-1,1));
-  int current_x = a.x;
-  int current_y = a.y;
-  int current_z = a.zinv;
+  float step_x = (b.x - a.x) / float(max(N-1,1));
+  float step_y = (b.y - a.y) / float(max(N-1,1));
+  float step_z = (b.zinv - a.zinv) / float(max(N-1,1));
+  vec3 illumination_step = vec3(b.illumination - a.illumination) / float(max(N-1,1));
+  float current_x = a.x;
+  float current_y = a.y;
+  float current_z = a.zinv;
+  vec3 current_ill(a.illumination);
   for (int i=0; i<N; i++)
   {
     result[i].x = current_x;
     result[i].y = current_y;
     result[i].zinv = current_z;
+    result[i].illumination = current_ill;
     current_x += step_x;
     current_y += step_y;
     current_z += step_z;
+    current_ill += illumination_step;
   }
 }
 
