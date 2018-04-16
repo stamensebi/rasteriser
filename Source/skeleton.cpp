@@ -16,8 +16,8 @@ using glm::mat4;
 using glm::ivec2;
 
 
-#define SCREEN_WIDTH 320
-#define SCREEN_HEIGHT 256
+#define SCREEN_WIDTH 960
+#define SCREEN_HEIGHT 768
 #define FULLSCREEN_MODE false
 #define pi 3.1415
 //Used to describe a pixel from the image
@@ -52,9 +52,9 @@ void Draw (screen* screen);
 void TransformationMatrix (glm::mat4 tr_mat, glm::vec4 camera_position, glm::mat4 rotation_matrix);
 
 //Global variables
-vec4 cam_pos(0.0, 0.0, -3.001, 1.0);
+vec4 cam_pos(0.0, 0.0, -2.501, 1.0);
 vec4 light_pos(0, -0.5, -0.7, 1.0);
-vec3 lightPower = 1.1f*vec3( 1, 1, 1 );
+vec3 lightPower = 34.f*vec3( 1, 1, 1 );
 vec3 indirectLightPowerPerArea = 0.5f*vec3( 1, 1, 1 );
 float focal_length = SCREEN_HEIGHT/2.0;
 std::vector<Triangle> triangles;
@@ -87,9 +87,10 @@ void Draw(screen* screen)
 {
   /* Clear buffers */
   memset(screen->buffer, 0, screen->height*screen->width*sizeof(uint32_t));
-  memset(depthBuffer, 0, SCREEN_HEIGHT*SCREEN_WIDTH*sizeof(float));
-  // for( int y=0; y<SCREEN_HEIGHT; ++y )
-  //   for( int x=0; x<SCREEN_WIDTH; ++x )
+  //memset(depthBuffer, 0, SCREEN_HEIGHT*SCREEN_WIDTH*sizeof(float));
+   for( int y=0; y<SCREEN_HEIGHT; ++y )
+     for( int x=0; x<SCREEN_WIDTH; ++x )
+     depthBuffer[y][x] = 0;
 
   LoadTestModel(triangles);
   for (uint32_t i=0; i<triangles.size(); i++)
@@ -101,7 +102,7 @@ void Draw(screen* screen)
     vertices[2].position = triangles[i].v2;
     vertices[0].normal = triangles[i].normal;
     vertices[1].normal = triangles[i].normal;
-    vertices[1].normal = triangles[i].normal;
+    vertices[2].normal = triangles[i].normal;
     vertices[0].reflectance = triangles[i].color;
     vertices[1].reflectance = triangles[i].color;
     vertices[2].reflectance = triangles[i].color;
@@ -123,8 +124,12 @@ void DrawPolygon( const vector<Vertex>& vertices, vec3 currentColor, screen* scr
     VertexShader( vertices[i], vertexPixels[i] );
   vector<Pixel> leftPixels;
   vector<Pixel> rightPixels;
+  //cout << "size before: " << leftPixels.size()<<endl;
   ComputePolygonRows( vertexPixels, leftPixels, rightPixels );
+  //cout << "color= " << rightPixels[0].illumination.x << " " << rightPixels[0].illumination.y << " " << rightPixels[0].illumination.z << " " << endl;
+  //cout << "size AFTER 1: " << leftPixels.size()<<endl;
   DrawRows( leftPixels, rightPixels, currentColor, screen );
+  //cout << "size AFTER 2: " << leftPixels.size()<<endl;
 }
 
 
@@ -144,7 +149,7 @@ void ComputePolygonRows ( const vector<Pixel>& vertexPixels, vector<Pixel>& left
       min_y = vertexPixels[i].y;
   }
   int ROWS = max_y - min_y + 1;
-
+  //cout<<"MIN Y IS!!!"<< min_y<<endl;
   //Resize vectors to ROWS
   leftPixels.resize(ROWS);
   rightPixels.resize(ROWS);
@@ -165,15 +170,17 @@ void ComputePolygonRows ( const vector<Pixel>& vertexPixels, vector<Pixel>& left
     leftPixels[i].x = numeric_limits<int>::max();
     leftPixels[i].y = min_y + i;
     leftPixels[i].zinv = 0;
+    //leftPixels[i].illumination = vertexPixels[0].illumination;
+
     rightPixels[i].x = numeric_limits<int>::min();
     rightPixels[i].y = min_y + i;
     rightPixels[i].zinv = 0;
+    //rightPixels[i].illumination = vertexPixels[0].illumination;
 
 
     //leftPixels.push_back(leftPixel);
     //rightPixels.push_back(rightPixel);
   }
-  cout<<leftPixels[35].x<<endl;
   // Loop through all edges of the polygon and use
   // linear interpolation to find the x-coordinate for
   // each row it occupies. Update the corresponding
@@ -185,21 +192,25 @@ void ComputePolygonRows ( const vector<Pixel>& vertexPixels, vector<Pixel>& left
     int delta_y = glm::abs(vertexPixels[i].y - vertexPixels[j].y);
     int pixels  = glm::max( delta_x, delta_y ) + 1;
     vector<Pixel> edge( pixels );
-
     InterpolatePixels( vertexPixels[i], vertexPixels[j], edge );
 
     for (int px = 0; px<pixels; px++)
     {
-      int y_idx = edge[px].y - min_y + 1;
+      int y_idx = edge[px].y - min_y ;
+      if(y_idx<0) y_idx = 0;
+      //cout << "Y IDX: " << y_idx<<endl;
       if(edge[px].x < leftPixels[y_idx].x)
       {
         leftPixels[y_idx].x = edge[px].x;
+        //leftPixels[y_idx].y =
         leftPixels[y_idx].zinv = edge[px].zinv;
+        leftPixels[y_idx].illumination = edge[px].illumination;
       }
       if(edge[px].x > rightPixels[y_idx].x)
       {
         rightPixels[y_idx].x = edge[px].x;
         rightPixels[y_idx].zinv = edge[px].zinv;
+        rightPixels[y_idx].illumination = edge[px].illumination;
       }
     }
   }
@@ -208,20 +219,31 @@ void ComputePolygonRows ( const vector<Pixel>& vertexPixels, vector<Pixel>& left
 
 void DrawRows (const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels, vec3 currentColor, screen* screen)
 {
-  for (uint32_t i = 0; i<leftPixels.size(); i++)
+  int P = leftPixels.size();
+  for (uint32_t i = 0; i<P; i++)
   {
     int pixels = rightPixels[i].x - leftPixels[i].x + 1;
     vector<Pixel> line( pixels );
+    //cout << "PIXELS " << line.size()<<endl;
     InterpolatePixels( leftPixels[i], rightPixels[i], line );
+    //cout<<"INTERPOLATE WORKED "<< line.size()<<endl;
     for (int pixel = 0; pixel<pixels; pixel++)
     {
       //PutPixelSDL( screen, line[pixel].x, line[pixel].y, vec3(0,0,0));
       //PixelShader( line[pixel], screen );
-      /*if(line[pixel].zinv > depthBuffer[line[pixel].y][line[pixel].x])
+      //if(line[pixel].y > 0 && line[pixel.x] > 0)
+      if(line[pixel].zinv > depthBuffer[line[pixel].y][line[pixel].x])
         {
           depthBuffer[line[pixel].y][line[pixel].x] = line[pixel].zinv;
-          PutPixelSDL( screen, line[pixel].x, line[pixel].y, currentColor);
-        }*/
+          //cout << "p.illumination " << line[pixel].illumination.x << " " << line[pixel].illumination.y << " " << line[pixel].illumination.z << endl;
+          // if(line[pixel].illumination.x > 0 && line[pixel].illumination.y > 0 && line[pixel].illumination.z > 0) {
+          //   PutPixelSDL( screen, line[pixel].x, line[pixel].y, currentColor * line[pixel].illumination);
+          // }
+          // else {
+          //   PutPixelSDL( screen, line[pixel].x, line[pixel].y, currentColor );
+          // }
+          PutPixelSDL( screen, line[pixel].x, line[pixel].y,  line[pixel].illumination);
+        }
     }
   }
 }
@@ -237,14 +259,18 @@ void VertexShader (const Vertex& v, Pixel& p)
   p.y = round(focal_length*p.zinv*cam_coord.y + SCREEN_HEIGHT/2.0);
 
   //Illumination for each Vertex
-  vec4 r = normalize(light_pos - v.position);
-  float radius = length(r);
-  vec4 n = normalize(v.normal);
-  float res = dot(r, n);
-  float dot = max( res, 0.f );
-  float frac = dot / (4 * pi * radius * radius );
-  vec3 D = frac*lightPower + indirectLightPowerPerArea;
-  p.illumination = v.reflectance * D;
+  vec4 r = glm::normalize(light_pos - v.position);
+  float radius = length(light_pos - v.position);
+  vec4 n = glm::normalize(v.normal);
+  /*n.x *= 0.8;
+  n.y *= 0.8;
+  n.z *= 0.8;*/
+  float res = glm::dot(r, n);
+  float dot = glm::max( res, 0.f );
+  float frac = dot / (4.f * pi * radius * radius );
+  cout << " frac " << frac << endl;
+  vec3 D = indirectLightPowerPerArea + frac*lightPower ;
+  p.illumination =  v.reflectance * D;
 
 }
 
@@ -253,22 +279,22 @@ void PixelShader( const Pixel& p, screen* screen)
 {
   int x = p.x;
   int y = p.y;
-  cout << x << " " << y << endl;
-  // if (p.zinv > depthBuffer[y][x])
-  // {
-  //   depthBuffer[y][x] = p.zinv;
-  //   PutPixelSDL( screen, x, y, p.illumination);
-  // }
+  //cout << x << " " << y << endl;
+   if (p.zinv >= depthBuffer[y][x])
+   {
+     depthBuffer[y][x] = p.zinv;
+     PutPixelSDL( screen, x, y, p.illumination);
+   }
 }
 
 //Generate equally-distributed values between two Pixels a and b
 void InterpolatePixels (Pixel a, Pixel b, vector<Pixel>& result)
 {
   int N = result.size();
-  float step_x = (b.x - a.x) / float(max(N-1,1));
-  float step_y = (b.y - a.y) / float(max(N-1,1));
-  float step_z = (b.zinv - a.zinv) / float(max(N-1,1));
-  vec3 illumination_step = vec3(b.illumination - a.illumination) / float(max(N-1,1));
+  float step_x = (b.x - a.x) / float(glm::max(N-1,1));
+  float step_y = (b.y - a.y) / float(glm::max(N-1,1));
+  float step_z = (b.zinv - a.zinv) / float(glm::max(N-1,1));
+  vec3 illumination_step = vec3(b.illumination - a.illumination) / float(glm::max(N-1,1));
   float current_x = a.x;
   float current_y = a.y;
   float current_z = a.zinv;
@@ -353,7 +379,7 @@ void Update()
     update_rotation_x (rotation_angle_x);
   }
 
-  std::cout << "Render time: " << dt << " ms." << std::endl;
+  //std::cout << "Render time: " << dt << " ms." << std::endl;
 }
 
 //Rotate the camera view around the Y axis.
