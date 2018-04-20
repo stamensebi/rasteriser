@@ -17,8 +17,8 @@ using glm::ivec2;
 using glm::clamp;
 
 
-#define SCREEN_WIDTH 1280
-#define SCREEN_HEIGHT 1024
+#define SCREEN_WIDTH 1000
+#define SCREEN_HEIGHT 900
 #define FULLSCREEN_MODE false
 #define pi 3.1415
 //Used to describe a pixel from the image
@@ -38,13 +38,13 @@ struct Vertex
 /* ----------------------------------------------------------------------------*/
 /* FUNCTIONS                                                                   */
 void ComputePolygonRows (const vector<Pixel>& vertexPixels, vector<Pixel>& leftPixels, vector<Pixel>& rightPixels);
-void BresenhamLine (Pixel a, Pixel b, vector<Pixel>& result);
+bool BarycentricCoord(Pixel p0, Pixel p1, Pixel p2, Pixel p, vec3& lambda);
 void DrawRows (const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels, vec3 currentColor, screen* screen);
 void DrawPolygon(const vector<Vertex>& vertices, vec3 currentColor, screen* screen);
 void ScreenShader(screen* screen);
 void update_rotation_x (float pitch);
 void update_rotation_y (float yaw  );
-void InterpolatePixels (Pixel a, Pixel b, vector<Pixel>& result, bool isEdge);
+void InterpolatePixels (Pixel a, Pixel b, vector<Pixel>& result);
 void VertexShader (const Vertex& v, Pixel& p);
 void PixelShader(const Pixel& p, screen* screen);
 void Update();
@@ -126,6 +126,34 @@ void Draw(screen* screen)
 
 
 }
+
+
+bool BarycentricCoord(Pixel p0, Pixel p1, Pixel p2, Pixel p, vec3& lambda)
+{
+  glm::vec2 v0((float)(p1.x - p0.x), (float)(p1.y, p0.y));
+  glm::vec2 v1((float)(p2.x - p0.x), (float)(p2.y, p0.y));
+  glm::vec2 v2((float)(p.x - p0.x), (float)(p.y - p0.y));
+  float d00 = glm::dot(v0, v0);
+  float d01 = glm::dot(v0, v1);
+  float d11 = glm::dot(v1, v1);
+  float d20 = glm::dot(v2, v0);
+  float d21 = glm::dot(v2, v1);
+  float denom = d00 * d11 - d01 * d01;
+  float w2 = (d11 * d20 - d01 * d21) / denom;
+  float w3 = (d00 * d21 - d01 * d20) / denom;
+  float w1 = 1.0f - w2 - w3;
+  if (w1 >= 0 && w2 >= 0 && w3 >= 0 && w1 <= 1 && w2 <= 1 && w3 <= 1){
+    lambda = vec3(w1, w2, w3);
+    return true;
+  }
+  else {
+    lambda = vec3(-1, -1, -1);
+    return false;
+  }
+}
+
+
+
 
 //Calculate the perceived luminosity of a pixel color
 inline float toLuma(vec3 color)
@@ -209,6 +237,10 @@ void DrawPolygon( const vector<Vertex>& vertices, vec3 currentColor, screen* scr
   vector<Pixel> vertexPixels( V );
   for( int i=0; i<V; ++i )
     VertexShader( vertices[i], vertexPixels[i] );
+  vec3 barycentric_coords;
+  if (BarycentricCoord(vertexPixels[0], vertexPixels[1], vertexPixels[2], vertexPixels[0], barycentric_coords));
+    cout << barycentric_coords.x << " " << barycentric_coords.y << " " << barycentric_coords.z << endl;
+
   vector<Pixel> leftPixels;
   vector<Pixel> rightPixels;
   ComputePolygonRows( vertexPixels, leftPixels, rightPixels );
@@ -260,7 +292,7 @@ void ComputePolygonRows ( const vector<Pixel>& vertexPixels, vector<Pixel>& left
     int delta_y = glm::abs(vertexPixels[i].y - vertexPixels[j].y);
     int pixels  = glm::max( delta_x, delta_y ) + 1;
     vector<Pixel> edge( pixels );
-    InterpolatePixels( vertexPixels[i], vertexPixels[j], edge, true );
+    InterpolatePixels( vertexPixels[i], vertexPixels[j], edge);
 
     for (int px = 0; px<pixels; px++)
     {
@@ -283,38 +315,6 @@ void ComputePolygonRows ( const vector<Pixel>& vertexPixels, vector<Pixel>& left
 
 }
 
-void BresenhamLine (Pixel a, Pixel b, vector<Pixel>& result)
-{
-  result.push_back(a);
-  int x = a.x; int y = a.y;
-  int dx = b.x - a.x;
-  int dy = b.y - a.y;
-  int d_dx = 2*dx;
-  int d_dy = 2*dy;
-  int d_dy_dx = d_dy - d_dx;
-  int d = d_dy - dx;
-
-  for(int i=0; i<=dx; i++)
-  {
-    if(d<0)
-    {
-      x += 1;
-      d += d_dy;
-    }
-    else
-    {
-      x += 1;
-      y += 1;
-      d += d_dy_dx;
-    }
-    Pixel res;
-    res.x = x;
-    res.y = y;
-    result.push_back(res);
-  }
-}
-
-
 void DrawRows (const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels, vec3 currentColor, screen* screen)
 {
   int P = leftPixels.size();
@@ -322,7 +322,7 @@ void DrawRows (const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels
   {
     int pixels = rightPixels[i].x - leftPixels[i].x + 1;
     vector<Pixel> line( pixels );
-    InterpolatePixels( leftPixels[i], rightPixels[i], line, true );
+    InterpolatePixels( leftPixels[i], rightPixels[i], line);
     for (int pixel = 0; pixel<pixels; pixel++)
     {
       if (line[pixel].x <= SCREEN_WIDTH && line[pixel].x >= 0 && line[pixel].y <= SCREEN_HEIGHT && line[pixel].y >= 0)
@@ -339,8 +339,8 @@ void VertexShader (const Vertex& v, Pixel& p)
   glm::vec4 cam_coord = v.position - cam_pos;
   cam_coord = R_y * R_x * cam_coord;
   if (cam_coord.z != 0 )
-    p.zinv = 1.0/cam_coord.z;
-  else p.zinv = 0;
+    p.zinv = 1.0f/cam_coord.z;
+  else p.zinv = 1.f;
   p.x = int(focal_length*p.zinv*cam_coord.x + SCREEN_WIDTH/2.0);
   p.y = int(focal_length*p.zinv*cam_coord.y + SCREEN_HEIGHT/2.0);
   p.pos3d = v.position;
@@ -381,31 +381,13 @@ void ScreenShader(screen* screen)
     for(int x=0; x<SCREEN_WIDTH; x++)
     {
       int count = 1;
-
-      vec3 sum = AA_colorBuffer[y][x];
-
-      //  for(int i = y - 1; i <= y + 1; i++) {
-      //   if( i < 0 || i == SCREEN_HEIGHT ) {
-      //     continue;
-      //   }
-      //   for(int j = x - 1; j <= x + 1; j++) {
-      //     if( j < 0 || j == SCREEN_WIDTH ) {
-      //       continue;
-      //     }
-      //     count++;
-      //     if (abs(i+j-x -y) == 1)
-      //      sum += 4.f*colorBuffer[i][j];
-      //     else sum += colorBuffer[i][j];
-      //   }
-      //  }
-      // sum /= 28.f;
-      PutPixelSDL( screen, x, y, sum);
+      PutPixelSDL( screen, x, y, AA_colorBuffer[y][x]);
     }
 }
 
 
 //Generate equally-distributed values between two Pixels a and b
-void InterpolatePixels (Pixel a, Pixel b, vector<Pixel>& result, bool isEdge)
+void InterpolatePixels (Pixel a, Pixel b, vector<Pixel>& result)
 {
   int N = result.size();
   float current_x = a.x;
@@ -419,12 +401,6 @@ void InterpolatePixels (Pixel a, Pixel b, vector<Pixel>& result, bool isEdge)
   for (int i=0; i<N; i++)
   {
     {
-      if (isEdge)
-      {
-        float dreapta = (b.y - a.y) * (current_x - a.x) - (b.x - a.x) * (current_y - a.y);
-        if (abs(dreapta) < 1)
-          int a=0;
-      }
       result[i].x = current_x;
       result[i].y = current_y;
       result[i].zinv = current_z;
