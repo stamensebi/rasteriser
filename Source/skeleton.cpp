@@ -28,8 +28,12 @@ struct Pixel
 {
   int x;
   int y;
+  int lx;
+  int ly;
+  int lzinv;
   float zinv;
   vec4 pos3d;
+  float isLit;
 };
 
 struct Vertex
@@ -39,34 +43,35 @@ struct Vertex
 
 /* ----------------------------------------------------------------------------*/
 /* FUNCTIONS                                                                   */
-void ComputePolygonRows (const vector<Pixel>& vertexPixels, vector<Pixel>& leftPixels, vector<Pixel>& rightPixels);
-void ComputeBoundingBox ( const vector<Pixel>& vertexPixels, int& min_x, int& max_x, int& min_y, int& max_y);
+void ComputeBoundingBox ( const vector<Pixel>& vertexPixels, int& min_x, int& max_x,
+                           int& min_y, int& max_y, int& min_lx, int& max_lx, int& min_ly, int& max_ly);
 void BarycentricCoord(Pixel p0, Pixel p1, Pixel p2, Pixel p, vec3& lambda);
-void DrawRows (const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels, vec3 currentColor, screen* screen);
 void DrawPolygon(const vector<Vertex>& vertices, vec3 currentColor, screen* screen);
 void ScreenShader(screen* screen);
 void update_rotation_x (float pitch);
 void update_rotation_y (float yaw  );
 void InterpolatePixels (Pixel a, Pixel b, vector<Pixel>& result);
 void VertexShader (const Vertex& v, Pixel& p);
-void PixelShader(const Pixel& p, screen* screen);
+void PixelShader(Pixel& p, screen* screen);
 void Update();
 void Draw (screen* screen);
 void TransformationMatrix ();
 glm::vec3 lookUpBuffer (float x, float y);
 inline float toLuma(vec3 color);
 void FXAA (int x, int y);
+void ComputeShadowMap( const vector<Vertex>& vertices, vec3 currentColor, screen* screen );
 
 
 //Global variables
 const vec2 inverseScreenSize (1.0/SCREEN_WIDTH, 1.0/SCREEN_HEIGHT);
 vec4 cam_pos(0.0, 0.0, -2.501, 1.0);
-vec4 light_pos(0, -0.5, -0.7, 1.0);
+vec4 light_pos(0.3, -0.3, -2.2, 1.0);
 vec3 lightPower = 34.f*vec3( 1, 1, 1 );
 vec3 indirectLightPowerPerArea = 0.5f*vec3( 1, 1, 1 );
 vec4 currentNormal(0.0f);
 vec3 currentReflectance(0.0f);
 float focal_length = SCREEN_HEIGHT/2.0;
+float light_focal = SCREEN_HEIGHT/2.0;
 std::vector<Triangle> triangles;
 float rotation_angle_y = 0.0;
 float rotation_angle_x = 0.0;
@@ -76,6 +81,8 @@ glm::mat4 transformation_matrix = glm::mat4(1.0);
 float depthBuffer[SCREEN_HEIGHT][SCREEN_WIDTH];
 glm::vec3 AA_colorBuffer[SCREEN_HEIGHT][SCREEN_WIDTH];
 glm::vec3 colorBuffer[SCREEN_HEIGHT][SCREEN_WIDTH];
+Pixel shadowMap[SCREEN_HEIGHT][SCREEN_WIDTH];
+
 
 
 int main( int argc, char* argv[] )
@@ -103,6 +110,8 @@ void Draw(screen* screen)
   memset(screen->buffer, 0, screen->height*screen->width*sizeof(uint32_t));
   memset(colorBuffer, 0, SCREEN_HEIGHT*SCREEN_WIDTH*sizeof(float)*3);
   memset(AA_colorBuffer, 0, SCREEN_HEIGHT*SCREEN_WIDTH*sizeof(float)*3);
+  memset(shadowMap, 0, SCREEN_HEIGHT*SCREEN_WIDTH*sizeof(Pixel));
+
 
    for( int y=0; y<SCREEN_HEIGHT; ++y )
      for( int x=0; x<SCREEN_WIDTH; ++x )
@@ -126,13 +135,10 @@ void Draw(screen* screen)
     DrawPolygon( vertices, triangles[i].color, screen );
   }
   ScreenShader(screen);
-
-
 }
 
 
-void BarycentricCoord(Pixel p0, Pixel p1, Pixel p2, Pixel p, vec3& lambda)
-{
+void BarycentricCoord(Pixel p0, Pixel p1, Pixel p2, Pixel p, vec3& lambda) {
   glm::vec2 v0((float)(p1.x - p0.x), (float)(p1.y - p0.y));
   glm::vec2 v1((float)(p2.x - p0.x), (float)(p2.y - p0.y));
   glm::vec2 v2((float)(p.x - p0.x), (float)(p.y - p0.y));
@@ -153,19 +159,14 @@ void BarycentricCoord(Pixel p0, Pixel p1, Pixel p2, Pixel p, vec3& lambda)
   }
 }
 
-
-
-
 //Calculate the perceived luminosity of a pixel color
-inline float toLuma(vec3 color)
-{
+inline float toLuma(vec3 color) {
   vec3 luma(0.299, 0.587, 0.114);
   return dot(color, luma);
 }
 
 //Map the inverse coordinates onto the color buffer space
-glm::vec3 lookUpBuffer (float x, float y)
-{
+glm::vec3 lookUpBuffer (float x, float y) {
   return colorBuffer[clamp((int)(clamp(y, 0.f, 1.f)*SCREEN_HEIGHT-1), 0, SCREEN_HEIGHT-1)]
                     [clamp((int)(clamp(x, 0.f, 1.f)*SCREEN_WIDTH-1), 0, SCREEN_WIDTH-1)];
 }
@@ -177,8 +178,7 @@ float GR_SCALE = 2.5f;
 float pixel_offset = 1.f/6.f;
 
 //Perform Fast Approximate Anti-Aliasing at a position (x,y) on the rendered image.
-void FXAA (int x, int y)
-{
+void FXAA (int x, int y) {
   vec2 inverseCoord((float)x/(float)SCREEN_WIDTH, (float)y/(float)SCREEN_HEIGHT);
 
   //Find the mapped coordinates of the corner neighbours in the color buffer.
@@ -230,18 +230,51 @@ void FXAA (int x, int y)
 }
 
 
+void ComputeShadowMap( const vector<Vertex>& vertices, vec3 currentColor, screen* screen ) {
+  int V = vertices.size();
+  vector<Pixel> lightPixels( V );
+  int min_x, min_y, max_x, max_y, min_lx, min_ly, max_lx, max_ly;
+  min_x = min_y = max_x = max_y = min_lx = min_ly = max_lx = max_ly = 0;
+
+  //ComputeBoundingBox( lightPixels, min_x, max_x, min_y, max_y, min_lx, max_lx, min_ly, max_ly);
+
+  for( int y=min_y; y<max_y; y++ )
+    {
+      if (y >= SCREEN_HEIGHT || y < 0 ) continue;
+      for( int x=min_x; x<max_x; x++ )
+      {
+        if(x >= SCREEN_WIDTH || x < 0 ) continue;
+        vec3 barycentric_coords;
+        Pixel p;
+        p.x = x;
+        p.y = y;
+        BarycentricCoord(lightPixels[0], lightPixels[1], lightPixels[2], p, barycentric_coords);
+        if (barycentric_coords.x >= 0 && barycentric_coords.y >= 0 && barycentric_coords.z >= 0
+          && barycentric_coords.x <= 1 && barycentric_coords.y <= 1 && barycentric_coords.z <= 1 )
+          {
+             p.zinv = lightPixels[0].zinv*barycentric_coords.x + lightPixels[1].zinv*barycentric_coords.y
+               + lightPixels[2].zinv*barycentric_coords.z;
+             p.pos3d = (lightPixels[0].pos3d*barycentric_coords.x*lightPixels[0].zinv
+               + lightPixels[1].pos3d*barycentric_coords.y*lightPixels[1].zinv
+               + lightPixels[2].pos3d*barycentric_coords.z*lightPixels[2].zinv) / p.zinv;
+          }
+        }
+    }
+
+}
 
 //Draw a 3D polygon
 void DrawPolygon( const vector<Vertex>& vertices, vec3 currentColor, screen* screen )
 {
   int V = vertices.size();
   vector<Pixel> vertexPixels( V );
-  for( int i=0; i<V; ++i )
+  for( int i=0; i<V; ++i ){
     VertexShader( vertices[i], vertexPixels[i] );
-  int min_x, min_y, max_x, max_y;
-  min_x = min_y = max_x = max_y = 0;
+  }
+  int min_x, min_y, max_x, max_y, min_lx, min_ly, max_lx, max_ly;
+  min_x = min_y = max_x = max_y = min_lx = min_ly = max_lx = max_ly = 0;
 
-  ComputeBoundingBox( vertexPixels, min_x, max_x, min_y, max_y );
+  ComputeBoundingBox( vertexPixels, min_x, max_x, min_y, max_y, min_lx, max_lx, min_ly, max_ly );
 
   for( int y=min_y; y<max_y; y++ )
     {
@@ -257,30 +290,34 @@ void DrawPolygon( const vector<Vertex>& vertices, vec3 currentColor, screen* scr
         if (barycentric_coords.x >= 0 && barycentric_coords.y >= 0 && barycentric_coords.z >= 0
           && barycentric_coords.x <= 1 && barycentric_coords.y <= 1 && barycentric_coords.z <= 1 )
           {
-            //cout << barycentric_coords.x << " " << barycentric_coords.y << " " << barycentric_coords.z << endl;
              p.zinv = vertexPixels[0].zinv*barycentric_coords.x + vertexPixels[1].zinv*barycentric_coords.y
                + vertexPixels[2].zinv*barycentric_coords.z;
              p.pos3d = (vertexPixels[0].pos3d*barycentric_coords.x*vertexPixels[0].zinv
                + vertexPixels[1].pos3d*barycentric_coords.y*vertexPixels[1].zinv
                + vertexPixels[2].pos3d*barycentric_coords.z*vertexPixels[2].zinv) / p.zinv;
+
              PixelShader (p, screen);
           }
         }
     }
 
-  /* vector<Pixel> leftPixels;
-   vector<Pixel> rightPixels;
-   ComputePolygonRows( vertexPixels, leftPixels, rightPixels );
-   DrawRows( leftPixels, rightPixels, currentColor, screen );*/
+
 }
 
-void ComputeBoundingBox ( const vector<Pixel>& vertexPixels, int& min_x, int& max_x, int& min_y, int& max_y)
+void ComputeBoundingBox ( const vector<Pixel>& vertexPixels, int& min_x, int& max_x,
+                           int& min_y, int& max_y, int& min_lx, int& max_lx, int& min_ly, int& max_ly)
 {
   int V = vertexPixels.size();
   int tmp_min_y = numeric_limits<int>::max();
   int tmp_min_x = numeric_limits<int>::max();
   int tmp_max_y = numeric_limits<int>::min();
   int tmp_max_x = numeric_limits<int>::min();
+
+  int tmp_min_ly = numeric_limits<int>::max();
+  int tmp_min_lx = numeric_limits<int>::max();
+  int tmp_max_ly = numeric_limits<int>::min();
+  int tmp_max_lx = numeric_limits<int>::min();
+
 
   for ( int i=0; i<V; i++ )
   {
@@ -292,6 +329,16 @@ void ComputeBoundingBox ( const vector<Pixel>& vertexPixels, int& min_x, int& ma
       tmp_max_y = vertexPixels[i].y;
     if (vertexPixels[i].y < tmp_min_y)
       tmp_min_y = vertexPixels[i].y;
+
+    if (vertexPixels[i].lx > tmp_max_lx)
+      tmp_max_lx = vertexPixels[i].lx;
+    if (vertexPixels[i].lx < tmp_min_lx)
+      tmp_min_lx = vertexPixels[i].lx;
+    if (vertexPixels[i].ly > tmp_max_ly)
+      tmp_max_ly = vertexPixels[i].ly;
+    if (vertexPixels[i].ly < tmp_min_ly)
+      tmp_min_ly = vertexPixels[i].ly;
+
   }
 
   min_x = tmp_min_x;
@@ -301,107 +348,25 @@ void ComputeBoundingBox ( const vector<Pixel>& vertexPixels, int& min_x, int& ma
 }
 
 
-void ComputePolygonRows ( const vector<Pixel>& vertexPixels, vector<Pixel>& leftPixels, vector<Pixel>& rightPixels )
-{
-  int V = vertexPixels.size();
-
-  // Find max and min y-value of the polygon
-  // and compute the number of rows it occupies.
-  int min_y = numeric_limits<int>::max();
-  int max_y = numeric_limits<int>::min();
-  for ( int i=0; i<V; i++ )
-  {
-    if (vertexPixels[i].y > max_y)
-      max_y = vertexPixels[i].y;
-    if (vertexPixels[i].y < min_y)
-      min_y = vertexPixels[i].y;
-  }
-  int ROWS = max_y - min_y + 1;
-
-  //Resize vectors to ROWS
-  leftPixels.resize(ROWS);
-  rightPixels.resize(ROWS);
-
-  // Initialize the x-coordinates in leftPixels
-  // to some really large value and the x-coordinates
-  // in rightPixels to some really small value.
-  for (int i=0; i<ROWS; i++)
-  {
-
-    leftPixels[i].x = numeric_limits<int>::max();
-    leftPixels[i].y = min_y + i;
-    leftPixels[i].zinv = 0;
-
-    rightPixels[i].x = numeric_limits<int>::min();
-    rightPixels[i].y = min_y + i;
-    rightPixels[i].zinv = 0;
-
-  }
-
-  for ( int i=0; i<V; i++ )
-  {
-    int j = (i + 1)%V;
-    int delta_x = glm::abs(vertexPixels[i].x - vertexPixels[j].x);
-    int delta_y = glm::abs(vertexPixels[i].y - vertexPixels[j].y);
-    int pixels  = glm::max( delta_x, delta_y ) + 1;
-    vector<Pixel> edge( pixels );
-    InterpolatePixels( vertexPixels[i], vertexPixels[j], edge);
-
-    for (int px = 0; px<pixels; px++)
-    {
-      int y_idx = edge[px].y - min_y ;
-      if(y_idx<0) y_idx = 0;
-      if(edge[px].x < leftPixels[y_idx].x)
-      {
-        leftPixels[y_idx].x = edge[px].x;
-        leftPixels[y_idx].zinv = edge[px].zinv;
-        leftPixels[y_idx].pos3d = edge[px].pos3d;
-      }
-      if(edge[px].x > rightPixels[y_idx].x)
-      {
-        rightPixels[y_idx].x = edge[px].x;
-        rightPixels[y_idx].zinv = edge[px].zinv;
-        rightPixels[y_idx].pos3d = edge[px].pos3d;
-      }
-    }
-  }
-
-}
-
-void DrawRows (const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels, vec3 currentColor, screen* screen)
-{
-  int P = leftPixels.size();
-  for (int i = 0; i<P; i++)
-  {
-    int pixels = rightPixels[i].x - leftPixels[i].x + 1;
-    vector<Pixel> line( pixels );
-    InterpolatePixels( leftPixels[i], rightPixels[i], line);
-    for (int pixel = 0; pixel<pixels; pixel++)
-    {
-      if (line[pixel].x < SCREEN_WIDTH && line[pixel].x >= 0 && line[pixel].y < SCREEN_HEIGHT && line[pixel].y >= 0)
-      {
-        PixelShader( line[pixel], screen );
-      }
-    }
-  }
-}
 
 //Project 4D points onto the 2D camera image plane
 void VertexShader (const Vertex& v, Pixel& p)
 {
+  glm::vec4 light_coord = v.position - light_pos;
   glm::vec4 cam_coord = v.position - cam_pos;
   cam_coord = R_y * R_x * cam_coord;
-//  if (cam_coord.z != 0 )
-    p.zinv = 1.0f/cam_coord.z;
-//  else p.zinv = 0.f;
+  p.zinv = 1.0f/cam_coord.z;
+  p.lzinv = 1.0f/light_coord.z;
   p.x = (int) (focal_length*cam_coord.x/cam_coord.z + SCREEN_WIDTH/2.0);
   p.y = (int) (focal_length*cam_coord.y/cam_coord.z + SCREEN_HEIGHT/2.0);
+  p.lx = (int) (light_focal*light_coord.x/light_coord.z + SCREEN_WIDTH/2.0);
+  p.ly = (int) (light_focal*light_coord.y/light_coord.z + SCREEN_HEIGHT/2.0);
   p.pos3d = v.position;
 
 }
 
 
-void PixelShader( const Pixel& p, screen* screen)
+void PixelShader(Pixel& p, screen* screen)
 {
   int x = p.x;
   int y = p.y;
@@ -433,16 +398,13 @@ void ScreenShader(screen* screen)
   for (int y=0; y<SCREEN_HEIGHT; y++)
     for(int x=0; x<SCREEN_WIDTH; x++)
     {
-      int count = 1;
-      unused(count);
       PutPixelSDL( screen, x, y, AA_colorBuffer[y][x]);
     }
 }
 
 
 //Generate equally-distributed values between two Pixels a and b
-void InterpolatePixels (Pixel a, Pixel b, vector<Pixel>& result)
-{
+void InterpolatePixels (Pixel a, Pixel b, vector<Pixel>& result) {
   int N = result.size();
   float current_x = a.x;
   float current_y = a.y;
@@ -468,8 +430,7 @@ void InterpolatePixels (Pixel a, Pixel b, vector<Pixel>& result)
 }
 
 //Update parameters and calculate rendering time after each frame.
-void Update()
-{
+void Update() {
   static int t = SDL_GetTicks();
   /* Compute frame time */
   int t2 = SDL_GetTicks();
@@ -527,8 +488,7 @@ void Update()
 }
 
 //Rotate the camera view around the Y axis.
-void update_rotation_y (float yaw)
-{
+void update_rotation_y (float yaw) {
   R_y =  glm::mat4 (cos(yaw), 0, sin(yaw), 0,
                        0,     1,     0,    0,
                    -sin(yaw), 0, cos(yaw), 0,
@@ -536,8 +496,7 @@ void update_rotation_y (float yaw)
 }
 
 //Rotate the camera view around the X axis.
-void update_rotation_x (float pitch)
-{
+void update_rotation_x (float pitch) {
   R_x =  glm::mat4 (1,     0,          0,       0,
                     0, cos(pitch), -sin(pitch), 0,
                     0, sin(pitch),  cos(pitch), 0,
@@ -546,8 +505,7 @@ void update_rotation_x (float pitch)
 
 //Create a homogeneous-coordinates transformation matrix for translation and rotation
 
-void TransformationMatrix()
-{
+void TransformationMatrix() {
   glm::mat4 cam_transform = glm::mat4 (1, 0, 0, cam_pos.x,
                                        0, 1, 0, cam_pos.y,
                                        0, 0, 1, cam_pos.z,
