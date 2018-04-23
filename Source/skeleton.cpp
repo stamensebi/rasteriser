@@ -7,6 +7,8 @@
 #include <limits.h>
 #include <math.h>
 
+#define unused(x) ((void) x)
+
 using namespace std;
 using glm::vec2;
 using glm::vec3;
@@ -131,8 +133,8 @@ void Draw(screen* screen)
 
 void BarycentricCoord(Pixel p0, Pixel p1, Pixel p2, Pixel p, vec3& lambda)
 {
-  glm::vec2 v0((float)(p1.x - p0.x), (float)(p1.y, p0.y));
-  glm::vec2 v1((float)(p2.x - p0.x), (float)(p2.y, p0.y));
+  glm::vec2 v0((float)(p1.x - p0.x), (float)(p1.y - p0.y));
+  glm::vec2 v1((float)(p2.x - p0.x), (float)(p2.y - p0.y));
   glm::vec2 v2((float)(p.x - p0.x), (float)(p.y - p0.y));
   float d00 = glm::dot(v0, v0);
   float d01 = glm::dot(v0, v1);
@@ -241,34 +243,35 @@ void DrawPolygon( const vector<Vertex>& vertices, vec3 currentColor, screen* scr
 
   ComputeBoundingBox( vertexPixels, min_x, max_x, min_y, max_y );
 
-  for( int y=min_y; y<=max_y; y++ )
+  for( int y=min_y; y<max_y; y++ )
     {
       if (y >= SCREEN_HEIGHT || y < 0 ) continue;
-      for( int x=min_x; x<=max_x; x++ )
+      for( int x=min_x; x<max_x; x++ )
       {
         if(x >= SCREEN_WIDTH || x < 0 ) continue;
         vec3 barycentric_coords;
         Pixel p;
         p.x = x;
-        P.y = y;
-        BarycentricCoord(vertexPixels[0], vertexPixels[1], vertexPixels[2], P, barycentric_coords);
+        p.y = y;
+        BarycentricCoord(vertexPixels[0], vertexPixels[1], vertexPixels[2], p, barycentric_coords);
         if (barycentric_coords.x >= 0 && barycentric_coords.y >= 0 && barycentric_coords.z >= 0
-          && barycentric_coords.x <= 1 && barycentric_coords.y <= 1 && barycentric_coords.z <= 1 &&)
+          && barycentric_coords.x <= 1 && barycentric_coords.y <= 1 && barycentric_coords.z <= 1 )
           {
-            p.zinv = vertexPixels[0].zinv*barycentric_coords.x + vertexPixels[1].zinv*barycentric_coords.y
-              + vertexPixels[2].zinv*barycentric_coords.z;
-            p.pos3d = (vertexPixels[0].pos3d*barycentric_coords.x*vertex_pixels[0].zinv
-              + vertexPixels[1].pos3d*barycentric_coords.y*vertex_pixels[1].zinv
-              + vertexPixels[2].pos3d*barycentric_coords.z*vertex_pixels[2].zinv) / p.zinv;
-            PixelShader (p, screen);
+            //cout << barycentric_coords.x << " " << barycentric_coords.y << " " << barycentric_coords.z << endl;
+             p.zinv = vertexPixels[0].zinv*barycentric_coords.x + vertexPixels[1].zinv*barycentric_coords.y
+               + vertexPixels[2].zinv*barycentric_coords.z;
+             p.pos3d = (vertexPixels[0].pos3d*barycentric_coords.x*vertexPixels[0].zinv
+               + vertexPixels[1].pos3d*barycentric_coords.y*vertexPixels[1].zinv
+               + vertexPixels[2].pos3d*barycentric_coords.z*vertexPixels[2].zinv) / p.zinv;
+             PixelShader (p, screen);
           }
         }
     }
 
-  // vector<Pixel> leftPixels;
-  // vector<Pixel> rightPixels;
-  // ComputePolygonRows( vertexPixels, leftPixels, rightPixels );
-  // DrawRows( leftPixels, rightPixels, currentColor, screen );
+  /* vector<Pixel> leftPixels;
+   vector<Pixel> rightPixels;
+   ComputePolygonRows( vertexPixels, leftPixels, rightPixels );
+   DrawRows( leftPixels, rightPixels, currentColor, screen );*/
 }
 
 void ComputeBoundingBox ( const vector<Pixel>& vertexPixels, int& min_x, int& max_x, int& min_y, int& max_y)
@@ -282,9 +285,9 @@ void ComputeBoundingBox ( const vector<Pixel>& vertexPixels, int& min_x, int& ma
   for ( int i=0; i<V; i++ )
   {
     if (vertexPixels[i].x > tmp_max_x)
-      tmp_max_x = vertexPixels[i].y;
+      tmp_max_x = vertexPixels[i].x;
     if (vertexPixels[i].x < tmp_min_x)
-      tmp_min_x = vertexPixels[i].y;
+      tmp_min_x = vertexPixels[i].x;
     if (vertexPixels[i].y > tmp_max_y)
       tmp_max_y = vertexPixels[i].y;
     if (vertexPixels[i].y < tmp_min_y)
@@ -388,11 +391,11 @@ void VertexShader (const Vertex& v, Pixel& p)
 {
   glm::vec4 cam_coord = v.position - cam_pos;
   cam_coord = R_y * R_x * cam_coord;
-  if (cam_coord.z != 0 )
+//  if (cam_coord.z != 0 )
     p.zinv = 1.0f/cam_coord.z;
-  else p.zinv = 1.f;
-  p.x = int(focal_length*p.zinv*cam_coord.x + SCREEN_WIDTH/2.0);
-  p.y = int(focal_length*p.zinv*cam_coord.y + SCREEN_HEIGHT/2.0);
+//  else p.zinv = 0.f;
+  p.x = (int) (focal_length*cam_coord.x/cam_coord.z + SCREEN_WIDTH/2.0);
+  p.y = (int) (focal_length*cam_coord.y/cam_coord.z + SCREEN_HEIGHT/2.0);
   p.pos3d = v.position;
 
 }
@@ -402,21 +405,21 @@ void PixelShader( const Pixel& p, screen* screen)
 {
   int x = p.x;
   int y = p.y;
+  if (p.zinv >= depthBuffer[y][x])
+  {
 
-  //Illumination for each Vertex
-  vec4 r = glm::normalize(light_pos - p.pos3d);
-  float radius = glm::length(light_pos - p.pos3d);
-  vec4 n = glm::normalize(currentNormal);
+    //Illumination for each Vertex
+    vec4 r = glm::normalize(light_pos - p.pos3d);
+    float radius = glm::length(light_pos - p.pos3d);
+    vec4 n = glm::normalize(currentNormal);
 
-  float res = glm::dot(r, n);
-  float dot = glm::max( res, 0.f );
-  float frac = dot / (4.f * pi * radius * radius );
+    float res = glm::dot(r, n);
+    float dot = glm::max( res, 0.f );
+    float frac = dot / (4.f * pi * radius * radius );
 
-  vec3 D = indirectLightPowerPerArea + frac*lightPower ;
-  D = D*currentReflectance ;
+    vec3 D = indirectLightPowerPerArea + frac*lightPower ;
+    D = D*currentReflectance ;
 
-   if (p.zinv >= depthBuffer[y][x])
-   {
      depthBuffer[y][x] = p.zinv;
      colorBuffer[y][x] = D;
    }
@@ -431,6 +434,7 @@ void ScreenShader(screen* screen)
     for(int x=0; x<SCREEN_WIDTH; x++)
     {
       int count = 1;
+      unused(count);
       PutPixelSDL( screen, x, y, AA_colorBuffer[y][x]);
     }
 }
@@ -470,6 +474,7 @@ void Update()
   /* Compute frame time */
   int t2 = SDL_GetTicks();
   float dt = float(t2-t);
+  unused(dt);
   t = t2;
 
   const uint8_t* keystate = SDL_GetKeyboardState( NULL );
