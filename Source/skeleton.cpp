@@ -38,7 +38,8 @@ struct Vertex
 /* ----------------------------------------------------------------------------*/
 /* FUNCTIONS                                                                   */
 void ComputePolygonRows (const vector<Pixel>& vertexPixels, vector<Pixel>& leftPixels, vector<Pixel>& rightPixels);
-bool BarycentricCoord(Pixel p0, Pixel p1, Pixel p2, Pixel p, vec3& lambda);
+void ComputeBoundingBox ( const vector<Pixel>& vertexPixels, int& min_x, int& max_x, int& min_y, int& max_y);
+void BarycentricCoord(Pixel p0, Pixel p1, Pixel p2, Pixel p, vec3& lambda);
 void DrawRows (const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels, vec3 currentColor, screen* screen);
 void DrawPolygon(const vector<Vertex>& vertices, vec3 currentColor, screen* screen);
 void ScreenShader(screen* screen);
@@ -128,7 +129,7 @@ void Draw(screen* screen)
 }
 
 
-bool BarycentricCoord(Pixel p0, Pixel p1, Pixel p2, Pixel p, vec3& lambda)
+void BarycentricCoord(Pixel p0, Pixel p1, Pixel p2, Pixel p, vec3& lambda)
 {
   glm::vec2 v0((float)(p1.x - p0.x), (float)(p1.y, p0.y));
   glm::vec2 v1((float)(p2.x - p0.x), (float)(p2.y, p0.y));
@@ -144,11 +145,9 @@ bool BarycentricCoord(Pixel p0, Pixel p1, Pixel p2, Pixel p, vec3& lambda)
   float w1 = 1.0f - w2 - w3;
   if (w1 >= 0 && w2 >= 0 && w3 >= 0 && w1 <= 1 && w2 <= 1 && w3 <= 1){
     lambda = vec3(w1, w2, w3);
-    return true;
   }
   else {
     lambda = vec3(-1, -1, -1);
-    return false;
   }
 }
 
@@ -237,14 +236,61 @@ void DrawPolygon( const vector<Vertex>& vertices, vec3 currentColor, screen* scr
   vector<Pixel> vertexPixels( V );
   for( int i=0; i<V; ++i )
     VertexShader( vertices[i], vertexPixels[i] );
-  vec3 barycentric_coords;
-  if (BarycentricCoord(vertexPixels[0], vertexPixels[1], vertexPixels[2], vertexPixels[0], barycentric_coords));
-    cout << barycentric_coords.x << " " << barycentric_coords.y << " " << barycentric_coords.z << endl;
+  int min_x, min_y, max_x, max_y;
+  min_x = min_y = max_x = max_y = 0;
 
-  vector<Pixel> leftPixels;
-  vector<Pixel> rightPixels;
-  ComputePolygonRows( vertexPixels, leftPixels, rightPixels );
-  DrawRows( leftPixels, rightPixels, currentColor, screen );
+  ComputeBoundingBox( vertexPixels, min_x, max_x, min_y, max_y );
+
+  for( int y=min_y; y<=max_y; y++ )
+    for( int x=min_x; x<=max_x; x++ )
+      {
+        vec3 barycentric_coords;
+        Pixel p;
+        p.x = x;
+        P.y = y;
+        BarycentricCoord(vertexPixels[0], vertexPixels[1], vertexPixels[2], P, barycentric_coords);
+        if (barycentric_coords.x >= 0 && barycentric_coords.y >= 0 && barycentric_coords.z >= 0
+            && barycentric_coords.x <= 1 && barycentric_coords.y <= 1 && barycentric_coords.z <= 1 &&)
+        {
+          p.zinv = vertexPixels[0].zinv*barycentric_coords.x + vertexPixels[1].zinv*barycentric_coords.y
+                    + vertexPixels[2].zinv*barycentric_coords.z;
+          p.pos3d = vertexPixels[0].pos3d*barycentric_coords.x + vertexPixels[1].pos3d*barycentric_coords.y
+                    + vertexPixels[2].pos3d*barycentric_coords.z;
+          PixelShader (p, screen);
+        }
+      //  cout << barycentric_coords.x << " " << barycentric_coords.y << " " << barycentric_coords.z << endl;
+      }
+
+  // vector<Pixel> leftPixels;
+  // vector<Pixel> rightPixels;
+  // ComputePolygonRows( vertexPixels, leftPixels, rightPixels );
+  // DrawRows( leftPixels, rightPixels, currentColor, screen );
+}
+
+void ComputeBoundingBox ( const vector<Pixel>& vertexPixels, int& min_x, int& max_x, int& min_y, int& max_y)
+{
+  int V = vertexPixels.size();
+  int tmp_min_y = numeric_limits<int>::max();
+  int tmp_min_x = numeric_limits<int>::max();
+  int tmp_max_y = numeric_limits<int>::min();
+  int tmp_max_x = numeric_limits<int>::min();
+
+  for ( int i=0; i<V; i++ )
+  {
+    if (vertexPixels[i].x > tmp_max_x)
+      tmp_max_x = vertexPixels[i].y;
+    if (vertexPixels[i].x < tmp_min_x)
+      tmp_min_x = vertexPixels[i].y;
+    if (vertexPixels[i].y > tmp_max_y)
+      tmp_max_y = vertexPixels[i].y;
+    if (vertexPixels[i].y < tmp_min_y)
+      tmp_min_y = vertexPixels[i].y;
+  }
+
+  min_x = tmp_min_x;
+  min_y = tmp_min_y;
+  max_x = tmp_max_x;
+  max_y = tmp_max_y;
 }
 
 
@@ -325,7 +371,7 @@ void DrawRows (const vector<Pixel>& leftPixels, const vector<Pixel>& rightPixels
     InterpolatePixels( leftPixels[i], rightPixels[i], line);
     for (int pixel = 0; pixel<pixels; pixel++)
     {
-      if (line[pixel].x <= SCREEN_WIDTH && line[pixel].x >= 0 && line[pixel].y <= SCREEN_HEIGHT && line[pixel].y >= 0)
+      if (line[pixel].x < SCREEN_WIDTH && line[pixel].x >= 0 && line[pixel].y < SCREEN_HEIGHT && line[pixel].y >= 0)
       {
         PixelShader( line[pixel], screen );
       }
