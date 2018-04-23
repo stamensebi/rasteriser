@@ -242,24 +242,28 @@ void DrawPolygon( const vector<Vertex>& vertices, vec3 currentColor, screen* scr
   ComputeBoundingBox( vertexPixels, min_x, max_x, min_y, max_y );
 
   for( int y=min_y; y<=max_y; y++ )
-    for( int x=min_x; x<=max_x; x++ )
+    {
+      if (y >= SCREEN_HEIGHT || y < 0 ) continue;
+      for( int x=min_x; x<=max_x; x++ )
       {
+        if(x >= SCREEN_WIDTH || x < 0 ) continue;
         vec3 barycentric_coords;
         Pixel p;
         p.x = x;
         P.y = y;
         BarycentricCoord(vertexPixels[0], vertexPixels[1], vertexPixels[2], P, barycentric_coords);
         if (barycentric_coords.x >= 0 && barycentric_coords.y >= 0 && barycentric_coords.z >= 0
-            && barycentric_coords.x <= 1 && barycentric_coords.y <= 1 && barycentric_coords.z <= 1 &&)
-        {
-          p.zinv = vertexPixels[0].zinv*barycentric_coords.x + vertexPixels[1].zinv*barycentric_coords.y
-                    + vertexPixels[2].zinv*barycentric_coords.z;
-          p.pos3d = vertexPixels[0].pos3d*barycentric_coords.x + vertexPixels[1].pos3d*barycentric_coords.y
-                    + vertexPixels[2].pos3d*barycentric_coords.z;
-          PixelShader (p, screen);
+          && barycentric_coords.x <= 1 && barycentric_coords.y <= 1 && barycentric_coords.z <= 1 &&)
+          {
+            p.zinv = vertexPixels[0].zinv*barycentric_coords.x + vertexPixels[1].zinv*barycentric_coords.y
+              + vertexPixels[2].zinv*barycentric_coords.z;
+            p.pos3d = (vertexPixels[0].pos3d*barycentric_coords.x*vertex_pixels[0].zinv
+              + vertexPixels[1].pos3d*barycentric_coords.y*vertex_pixels[1].zinv
+              + vertexPixels[2].pos3d*barycentric_coords.z*vertex_pixels[2].zinv) / p.zinv;
+            PixelShader (p, screen);
+          }
         }
-      //  cout << barycentric_coords.x << " " << barycentric_coords.y << " " << barycentric_coords.z << endl;
-      }
+    }
 
   // vector<Pixel> leftPixels;
   // vector<Pixel> rightPixels;
