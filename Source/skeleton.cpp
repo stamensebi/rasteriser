@@ -19,8 +19,8 @@ using glm::ivec2;
 using glm::clamp;
 
 
-#define SCREEN_WIDTH 1000
-#define SCREEN_HEIGHT 900
+#define SCREEN_WIDTH 1024
+#define SCREEN_HEIGHT 1024
 #define LIGHT_HEIGHT 100
 #define LIGHT_WIDTH 100
 #define FULLSCREEN_MODE false
@@ -65,26 +65,22 @@ void Draw (screen* screen);
 glm::vec3 lookUpBuffer (float x, float y);
 inline float toLuma(vec3 color);
 void FXAA (int x, int y);
-void ClipPolygon(const vector<Pixel> vertexPixels, vector<Pixel>& clippedPixels);
-void ClipNear(const vector<Pixel> vertexPixels, vector<Pixel>& clippedPixels);
-void edgeInteresction (const Pixel v0, const Pixel v1, Pixel& intersection);
 
 //Global variables
 const vec2 inverseScreenSize (1.0/SCREEN_WIDTH, 1.0/SCREEN_HEIGHT);
-vec4 cam_pos(0.0, 0.0, -2.501, 1.0);
-vec4 light_pos(0.5, 0.5, -3.501, 1.0);
+vec4 cam_pos(0.0, 0.0, -3.f, 1.0);
+vec4 light_pos(0.7, 0.5, -2.501, 1.0);
 vec3 lightPower = 200.f*vec3( 1, 1, 1 );
 vec3 indirectLightPowerPerArea = 0.5f*vec3( 1, 1, 1 );
 vec4 currentNormal(0.0f);
 vec3 currentReflectance(0.0f);
-float focal_length = SCREEN_HEIGHT/2.0;
+float focal_length = SCREEN_HEIGHT;
 float light_focal = SCREEN_HEIGHT/2.0;
 std::vector<Triangle> triangles;
 float rotation_angle_y = 0.0;
 float rotation_angle_x = 0.0;
 glm::mat4 R_y = glm::mat4(1.0);
 glm::mat4 R_x = glm::mat4(1.0);
-glm::mat4 transformation_matrix = glm::mat4(1.0);
 float depthBuffer[SCREEN_HEIGHT][SCREEN_WIDTH];
 float lightDepthBuffer[SCREEN_HEIGHT][SCREEN_WIDTH];
 glm::vec3 AA_colorBuffer[SCREEN_HEIGHT][SCREEN_WIDTH];
@@ -326,8 +322,6 @@ void DrawPolygon( const vector<Vertex>& vertices, vec3 currentColor, screen* scr
     VertexShader( vertices[i], vertexPixels[i], CAMERA );
   }
 
-  ClipPolygon(vertexPixels, clippedPixels);
-  //cout << clippedPixels[1].x << endl;
   int min_x, min_y, max_x, max_y, min_lx, min_ly, max_lx, max_ly;
   min_x = min_y = max_x = max_y = min_lx = min_ly = max_lx = max_ly = 0;
 
@@ -341,14 +335,10 @@ void DrawPolygon( const vector<Vertex>& vertices, vec3 currentColor, screen* scr
       {
         if(x >= SCREEN_WIDTH || x < 0 ) continue;
         vec3 barycentric_coords;
-        //vec3 barycentric_coords_light;
         Pixel p;
         p.x = x;
         p.y = y;
-        //p.lx = x;
-        //p.ly = y;
         BarycentricCoord(vertexPixels[0], vertexPixels[1], vertexPixels[2], p, barycentric_coords);
-        //BarycentricCoordLight(vertexPixels[0], vertexPixels[1], vertexPixels[2], p, barycentric_coords_light);
         if (barycentric_coords.x >= 0 && barycentric_coords.y >= 0 && barycentric_coords.z >= 0
           && barycentric_coords.x <= 1 && barycentric_coords.y <= 1 && barycentric_coords.z <= 1 )
           {
@@ -361,7 +351,7 @@ void DrawPolygon( const vector<Vertex>& vertices, vec3 currentColor, screen* scr
              p.lzinv = 1.0f/light_coord.z;
              p.lx = (int) (light_focal*light_coord.x/light_coord.z + SCREEN_WIDTH/2.0);
              p.ly = (int) (light_focal*light_coord.y/light_coord.z + SCREEN_HEIGHT/2.0);
-             if ((p.lzinv + 0.01f) < (lightDepthBuffer[p.ly][p.lx]))
+             if ((p.lzinv + 0.1f) < (lightDepthBuffer[p.ly][p.lx]))
               p.isLit = 0.f;
              PixelShader (p, screen);
           }
@@ -545,7 +535,7 @@ void Update() {
     update_rotation_x (rotation_angle_x);
   }
 
-  // std::cout << " time: " << dt << " ms." << std::endl;
+  std::cout << " time: " << dt << " ms." << std::endl;
 }
 
 //Rotate the camera view around the Y axis.
