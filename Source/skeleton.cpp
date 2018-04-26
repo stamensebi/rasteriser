@@ -273,6 +273,10 @@ void FXAA (int x, int y) {
 
 void DrawPolygonLight( const vector<Vertex>& vertices, vec3 currentColor, screen* screen ) {
   int V = vertices.size();
+  for( int i=0; i<V; ++i ){
+    if (vertices[i].position.z < (light_pos.z + 0.0001f))
+      return;
+  }
   vector<Pixel> vertexPixels( V );
   for( int i=0; i<V; ++i ){
     VertexShader( vertices[i], vertexPixels[i], LIGHT );
@@ -312,6 +316,10 @@ void DrawPolygonLight( const vector<Vertex>& vertices, vec3 currentColor, screen
 //Draw a 3D polygon
 void DrawPolygon( const vector<Vertex>& vertices, vec3 currentColor, screen* screen ) {
   int V = vertices.size();
+  for( int i=0; i<V; ++i ){
+    if ( (vertices[i].position.z) < (cam_pos.z + 0.01f))
+      return;
+  }
   vector<Pixel> vertexPixels( V );
   vector<Pixel> clippedPixels( V );
   for( int i=0; i<V; ++i ){
@@ -480,55 +488,6 @@ void ScreenShader(screen* screen) {
     }
 }
 
-
-void ClipPolygon(const vector<Pixel> vertexPixels, vector<Pixel>& clippedPixels) {
-  ClipNear(vertexPixels, clippedPixels);
-}
-
-void ClipNear(const vector<Pixel> vertexPixels, vector<Pixel>& clippedPixels) {
-  int V = vertexPixels.size();
-  if (V < 3)
-    return;
-  for(int i=0; i<V; i++)
-  {
-    Pixel v0 = vertexPixels[i];
-    Pixel v1 = vertexPixels[(i+1)%V];
-    if(v0.camPos.z >= CLIP_THRESH)
-    {
-      if(v1.camPos.z >= CLIP_THRESH)
-        clippedPixels.push_back(v1);
-      else
-      {
-        Pixel intersection;
-        edgeInteresction (v0, v1, intersection);
-        clippedPixels.push_back(intersection);
-      }
-    }
-
-    else if (v1.camPos.z >= CLIP_THRESH)
-    {
-      Pixel intersection;
-      edgeInteresction (v0, v1, intersection);
-      clippedPixels.push_back(intersection);
-      clippedPixels.push_back(v1);
-    }
-
-  }
-}
-
-void edgeInteresction (const Pixel v0, const Pixel v1, Pixel& intersection) {
-  float a = (v0.camPos.z - 0.0001) / (v0.camPos.z - v1.camPos.z);
-
-  intersection.camPos = (1-a)*v0.camPos + a*v1.camPos;
-  intersection.x = (focal_length*intersection.camPos.x / intersection.camPos.z) + SCREEN_WIDTH/2;
-  intersection.y = (focal_length*intersection.camPos.y / intersection.camPos.z) + SCREEN_HEIGHT/2;
-  intersection.pos3d = (1-a)*v0.pos3d + a*v1.pos3d;
-  intersection.zinv = 1.0f/intersection.camPos.z;
-  intersection.lx = v1.lx;
-  intersection.ly = v1.ly;
-  intersection.lzinv = v1.lzinv;
-
-}
 
 
 //Update parameters and calculate rendering time after each frame.
